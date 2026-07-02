@@ -4,7 +4,7 @@ function getDevelopmentApiUrl() {
   const hostUri = Constants.expoConfig?.hostUri || Constants.manifest2?.extra?.expoClient?.hostUri;
   const host = hostUri?.split(':')[0];
 
-  return host ? `http://${host}:5000` : 'http://localhost:5000';
+  return host ? `http://${host}:3000` : 'http://localhost:3000';
 }
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || getDevelopmentApiUrl();

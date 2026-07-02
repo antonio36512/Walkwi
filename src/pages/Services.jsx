@@ -14,7 +14,6 @@ const providers = [
     location: 'Via Argentina',
     price: '$15/paseo',
     badge: 'Verificado',
-    type: 'walker',
   },
   {
     id: 2,
@@ -22,11 +21,10 @@ const providers = [
     rating: 4.8,
     reviews: 98,
     experience:
-      'Cuidadora de mascotas con 3 anos de experiencia. Adoro jugar y socializar perros pequenos.',
+      'Paseadora con 3 anos de experiencia. Adoro caminar y socializar perros pequenos.',
     location: 'El Cangrejo',
     price: '$12/paseo',
     badge: 'Verificado',
-    type: 'caregiver',
   },
   {
     id: 3,
@@ -38,7 +36,6 @@ const providers = [
     location: 'Obarrio',
     price: '$14/paseo',
     badge: 'Superanfitrion',
-    type: 'walker',
   },
   {
     id: 4,
@@ -46,11 +43,10 @@ const providers = [
     rating: 4.9,
     reviews: 156,
     experience:
-      'Especialista en mascotas con necesidades especiales. Entrenamiento positivo y mucho amor.',
+      'Especialista en paseos para mascotas con necesidades especiales. Entrenamiento positivo y mucho amor.',
     location: 'San Francisco',
     price: '$16/paseo',
     badge: 'Verificado',
-    type: 'caregiver',
   },
 ];
 
@@ -63,18 +59,16 @@ const initialRequests = [
     location: 'Via Argentina',
     pet: 'Luna',
     service: 'Paseo',
-    type: 'walker',
     notes: 'Luna es tranquila, pero se asusta con motos.',
   },
   {
     id: 2,
     client: 'Miguel Santos',
     date: 'Manana, 9:00 a.m.',
-    duration: '2 horas',
+    duration: '1 hora',
     location: 'El Cangrejo',
     pet: 'Rocky',
-    service: 'Cuidado en casa',
-    type: 'caregiver',
+    service: 'Paseo',
     notes: 'Necesita agua fresca y una caminata corta.',
   },
   {
@@ -85,7 +79,6 @@ const initialRequests = [
     location: 'Obarrio',
     pet: 'Milo',
     service: 'Paseo',
-    type: 'walker',
     notes: 'Milo convive bien con otros perros.',
   },
 ];
@@ -95,18 +88,16 @@ const locations = ['Todas', 'Via Argentina', 'El Cangrejo', 'Obarrio', 'San Fran
 function Services({ user }) {
   const role = user?.role || 'user';
 
-  if (role === 'walker' || role === 'caregiver') {
-    return <ProviderRequests role={role} />;
+  if (role === 'walker') {
+    return <ProviderRequests />;
   }
 
   return <UserServices />;
 }
 
-function ProviderRequests({ role }) {
+function ProviderRequests() {
   const [requests, setRequests] = useState(
-    initialRequests
-      .filter((request) => request.type === role)
-      .map((request) => ({ ...request, status: 'pending' })),
+    initialRequests.map((request) => ({ ...request, status: 'pending' })),
   );
 
   const handleDecision = (id, status) => {
@@ -123,10 +114,10 @@ function ProviderRequests({ role }) {
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
       <View style={styles.heroBlock}>
-        <Text style={styles.eyebrow}>Solicitudes</Text>
+        <Text style={styles.eyebrow}>Solicitudes de paseo</Text>
         <Text style={styles.title}>Solicitudes por revisar</Text>
         <Text style={styles.heroCopy}>
-          Acepta o deniega solicitudes de clientes segun tu disponibilidad.
+          Acepta o deniega solicitudes de paseo segun tu disponibilidad.
         </Text>
       </View>
 
@@ -193,12 +184,11 @@ function ProviderRequests({ role }) {
         )}
       </View>
 
-      {decidedRequests.length > 0 ? (
+      {decidedRequests.length > 0 && (
         <View style={styles.historyBlock}>
           <Text style={styles.sectionTitle}>Historial reciente</Text>
           {decidedRequests.map((request) => {
             const accepted = request.status === 'accepted';
-
             return (
               <View key={request.id} style={styles.historyItem}>
                 <View style={styles.historyTitleRow}>
@@ -223,152 +213,108 @@ function ProviderRequests({ role }) {
             );
           })}
         </View>
-      ) : null}
+      )}
     </ScrollView>
   );
 }
 
 function UserServices() {
-  const [selectedType, setSelectedType] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState('Todas');
 
   const filteredProviders = useMemo(
     () =>
-      providers.filter((provider) => {
-        const matchesType = selectedType ? provider.type === selectedType : true;
-        const matchesLocation =
-          selectedLocation === 'Todas' ? true : provider.location === selectedLocation;
-        return matchesType && matchesLocation;
-      }),
-    [selectedLocation, selectedType],
+      providers.filter((provider) =>
+        selectedLocation === 'Todas' ? true : provider.location === selectedLocation,
+      ),
+    [selectedLocation],
   );
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
-      {!selectedType ? (
-        <>
-          <View style={styles.heroBlock}>
-            <Text style={styles.eyebrow}>Nuestros servicios</Text>
-            <Text style={styles.title}>Que tipo de servicio buscas?</Text>
-            <Text style={styles.heroCopy}>
-              Selecciona si buscas un paseador para paseos diarios o un cuidador para dejar a
-              tu mascota.
-            </Text>
-          </View>
+      <View style={styles.heroBlock}>
+        <Text style={styles.eyebrow}>Paseadores</Text>
+        <Text style={styles.title}>Encuentra tu paseador ideal</Text>
+        <Text style={styles.heroCopy}>
+          Conecta con paseadores verificados cerca de ti para paseos diarios seguros y divertidos.
+        </Text>
+      </View>
 
-          <View style={styles.typeSelector}>
-            <Pressable
-              onPress={() => setSelectedType('walker')}
-              style={({ pressed }) => [styles.typeButton, pressed && styles.cardPressed]}
-            >
-              <View style={styles.typeIconCircle}>
-                <MaterialCommunityIcons name="dog-side" size={36} color={colors.primary} />
+      <View style={styles.filterBlock}>
+        <View style={styles.filterLabelRow}>
+          <Ionicons name="location-outline" size={17} color={colors.primary} />
+          <Text style={styles.filterLabel}>Ubicacion</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.chipsRow}>
+            {locations.map((location) => {
+              const active = selectedLocation === location;
+              return (
+                <Pressable
+                  key={location}
+                  onPress={() => setSelectedLocation(location)}
+                  style={[styles.chip, active && styles.activeChip]}
+                >
+                  <Text style={[styles.chipText, active && styles.activeChipText]}>
+                    {location}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+
+      <View style={styles.providersGrid}>
+        {filteredProviders.length > 0 ? (
+          filteredProviders.map((provider) => (
+            <View key={provider.id} style={styles.providerCard}>
+              <View style={styles.providerHeader}>
+                <View style={styles.avatar}>
+                  <Ionicons name="person-outline" size={28} color={colors.primary} />
+                </View>
+
+                <View style={styles.providerInfo}>
+                  <Text style={styles.providerName}>{provider.name}</Text>
+                  <View style={styles.ratingRow}>
+                    <Ionicons name="star" size={15} color={colors.primary} />
+                    <Text style={styles.rating}>{provider.rating}</Text>
+                    <Text style={styles.reviews}>({provider.reviews} resenas)</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.badge, badgeStyle(provider.badge)]}>
+                  <Text style={[styles.badgeText, badgeTextStyle(provider.badge)]}>
+                    {provider.badge}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.typeTitle}>Paseadores</Text>
-              <Text style={styles.typeText}>Paseos diarios y actividad para tu mascota</Text>
-            </Pressable>
 
-            <Pressable
-              onPress={() => setSelectedType('caregiver')}
-              style={({ pressed }) => [styles.typeButton, pressed && styles.cardPressed]}
-            >
-              <View style={styles.typeIconCircle}>
-                <MaterialCommunityIcons name="home-heart" size={36} color={colors.primary} />
+              <Text style={styles.experience}>{provider.experience}</Text>
+
+              <View style={styles.cardFooter}>
+                <View>
+                  <View style={styles.locationRow}>
+                    <Ionicons name="location-outline" size={15} color={colors.textMuted} />
+                    <Text style={styles.location}>{provider.location}</Text>
+                  </View>
+                  <Text style={styles.price}>{provider.price}</Text>
+                </View>
+
+                <Pressable style={styles.contactButton}>
+                  <Ionicons name="chatbubble-outline" size={17} color="#ffffff" />
+                  <Text style={styles.contactButtonText}>Contactar</Text>
+                </Pressable>
               </View>
-              <Text style={styles.typeTitle}>Cuidadores</Text>
-              <Text style={styles.typeText}>Cuidado y custodia en casa</Text>
-            </Pressable>
-          </View>
-        </>
-      ) : (
-        <>
-          <View style={styles.heroBlock}>
-            <Pressable onPress={() => setSelectedType(null)} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={18} color={colors.primary} />
-              <Text style={styles.backButtonText}>Volver</Text>
-            </Pressable>
-            <Text style={styles.eyebrow}>Nuestros servicios</Text>
-            <Text style={styles.title}>
-              {selectedType === 'walker' ? 'Paseadores' : 'Cuidadores'}
-            </Text>
-            <Text style={styles.heroCopy}>
-              {selectedType === 'walker'
-                ? 'Encuentra paseadores de confianza para paseos diarios.'
-                : 'Encuentra cuidadores confiables para dejar a tu mascota.'}
-            </Text>
-          </View>
-
-          <View style={styles.filterBlock}>
-            <View style={styles.filterLabelRow}>
-              <Ionicons name="location-outline" size={17} color={colors.primary} />
-              <Text style={styles.filterLabel}>Ubicacion</Text>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipsRow}>
-                {locations.map((location) => {
-                  const active = selectedLocation === location;
-
-                  return (
-                    <Pressable
-                      key={location}
-                      onPress={() => setSelectedLocation(location)}
-                      style={[styles.chip, active && styles.activeChip]}
-                    >
-                      <Text style={[styles.chipText, active && styles.activeChipText]}>
-                        {location}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="dog-side" size={32} color={colors.primary} />
+            <Text style={styles.emptyTitle}>Sin paseadores en esta zona</Text>
+            <Text style={styles.emptyCopy}>Prueba con otra ubicacion para ver mas opciones.</Text>
           </View>
-
-          <View style={styles.providersGrid}>
-            {filteredProviders.map((provider) => (
-              <View key={provider.id} style={styles.providerCard}>
-                <View style={styles.providerHeader}>
-                  <View style={styles.avatar}>
-                    <Ionicons name="person-outline" size={28} color={colors.primary} />
-                  </View>
-
-                  <View style={styles.providerInfo}>
-                    <Text style={styles.providerName}>{provider.name}</Text>
-                    <View style={styles.ratingRow}>
-                      <Ionicons name="star" size={15} color={colors.primary} />
-                      <Text style={styles.rating}>{provider.rating}</Text>
-                      <Text style={styles.reviews}>({provider.reviews} resenas)</Text>
-                    </View>
-                  </View>
-
-                  <View style={[styles.badge, badgeStyle(provider.badge)]}>
-                    <Text style={[styles.badgeText, badgeTextStyle(provider.badge)]}>
-                      {provider.badge}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.experience}>{provider.experience}</Text>
-
-                <View style={styles.cardFooter}>
-                  <View>
-                    <View style={styles.locationRow}>
-                      <Ionicons name="location-outline" size={15} color={colors.textMuted} />
-                      <Text style={styles.location}>{provider.location}</Text>
-                    </View>
-                    <Text style={styles.price}>{provider.price}</Text>
-                  </View>
-
-                  <Pressable style={styles.contactButton}>
-                    <Ionicons name="chatbubble-outline" size={17} color="#ffffff" />
-                    <Text style={styles.contactButtonText}>Contactar</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        </>
-      )}
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -420,59 +366,8 @@ const styles = StyleSheet.create({
     lineHeight: 27,
     marginTop: 14,
   },
-  typeSelector: {
-    alignSelf: 'center',
-    gap: 18,
-    marginTop: 36,
-    maxWidth: 620,
-    width: '100%',
-  },
-  typeButton: {
-    ...shadows.card,
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderColor: 'rgba(83, 128, 93, 0.2)',
-    borderRadius: 24,
-    borderWidth: 2,
-    gap: 12,
-    padding: 28,
-  },
-  typeIconCircle: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    borderRadius: 24,
-    height: 66,
-    justifyContent: 'center',
-    width: 66,
-  },
   cardPressed: {
     opacity: 0.75,
-  },
-  typeTitle: {
-    color: colors.primary,
-    fontSize: 21,
-    fontWeight: '900',
-  },
-  typeText: {
-    color: colors.textMuted,
-    fontSize: 15,
-    textAlign: 'center',
-  },
-  backButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(45, 156, 111, 0.1)',
-    borderRadius: 16,
-    flexDirection: 'row',
-    gap: 7,
-    marginBottom: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  backButtonText: {
-    color: colors.primary,
-    fontSize: 15,
-    fontWeight: '900',
   },
   filterBlock: {
     alignSelf: 'center',
