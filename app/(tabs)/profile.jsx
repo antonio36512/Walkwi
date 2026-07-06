@@ -12,9 +12,12 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { apiRequest } from '../services/api';
-import { clearSession, getStoredToken } from '../storage/session';
-import { colors, shadows } from '../styles/theme';
+import { useRouter } from 'expo-router';
+import MapPicker from '../../src/components/MapPicker';
+import { apiRequest } from '../../src/services/api';
+import { clearSession, getStoredToken } from '../../src/storage/session';
+import { colors, shadows } from '../../src/styles/theme';
+import { useAuth } from '../../src/contexts/AuthContext';
 
 const options = [
   { label: 'Editar perfil', icon: 'create-outline' },
@@ -41,7 +44,10 @@ function normalizePets(profile) {
   return [];
 }
 
-function Profile({ user, onLogout, onUserUpdate }) {
+function Profile() {
+  const router = useRouter();
+  const { user, handleLogout: authLogout, handleUserUpdate } = useAuth();
+
   const profile = user || { name: 'Usuario Walkwi', email: 'usuario@walkwi.com' };
   const pets = normalizePets(profile);
   const canManagePets = profile.role === 'user';
@@ -54,7 +60,9 @@ function Profile({ user, onLogout, onUserUpdate }) {
   const [savingProfile, setSavingProfile] = useState(false);
   const [draftProfile, setDraftProfile] = useState({
     experience: profile.experience || '',
+    latitude: profile.latitude || null,
     location: profile.location || '',
+    longitude: profile.longitude || null,
     name: profile.name || '',
     phone: profile.phone || '',
     profilePhotoUri: profile.profilePhotoUri || '',
@@ -63,10 +71,11 @@ function Profile({ user, onLogout, onUserUpdate }) {
   const [petMessage, setPetMessage] = useState('');
   const [profileError, setProfileError] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
 
   const handleLogout = async () => {
     await clearSession();
-    onLogout();
+    authLogout();
   };
 
   const openAddForm = () => {
@@ -102,7 +111,9 @@ function Profile({ user, onLogout, onUserUpdate }) {
   const openProfileEditor = () => {
     setDraftProfile({
       experience: profile.experience || '',
+      latitude: profile.latitude || null,
       location: profile.location || '',
+      longitude: profile.longitude || null,
       name: profile.name || '',
       phone: profile.phone || '',
       profilePhotoUri: profile.profilePhotoUri || '',
@@ -115,7 +126,9 @@ function Profile({ user, onLogout, onUserUpdate }) {
   const cancelProfileEditor = () => {
     setDraftProfile({
       experience: profile.experience || '',
+      latitude: profile.latitude || null,
       location: profile.location || '',
+      longitude: profile.longitude || null,
       name: profile.name || '',
       phone: profile.phone || '',
       profilePhotoUri: profile.profilePhotoUri || '',
@@ -184,14 +197,16 @@ function Profile({ user, onLogout, onUserUpdate }) {
         },
         body: JSON.stringify({
           experience: draftProfile.experience.trim(),
+          latitude: draftProfile.latitude,
           location: draftProfile.location.trim(),
+          longitude: draftProfile.longitude,
           name: draftProfile.name.trim(),
           phone: draftProfile.phone.trim(),
           profilePhotoUri: draftProfile.profilePhotoUri,
         }),
       });
 
-      await onUserUpdate(data.user);
+      await handleUserUpdate(data.user);
       setEditMode(false);
       setProfileMessage(data.message || 'Perfil actualizado.');
     } catch (requestError) {
@@ -281,7 +296,7 @@ function Profile({ user, onLogout, onUserUpdate }) {
         body: JSON.stringify({ pets: nextPets }),
       });
 
-      await onUserUpdate(data.user);
+      await handleUserUpdate(data.user);
       setDraftPet(createEmptyPet());
       setEditingIndex(null);
       setFormVisible(false);
@@ -397,15 +412,25 @@ function Profile({ user, onLogout, onUserUpdate }) {
           />
 
           <Text style={styles.label}>Ubicacion</Text>
-          <TextInput
-            onChangeText={(value) => updateDraftProfile('location', value)}
-            placeholder="Tu ciudad o zona"
-            placeholderTextColor="#8fa899"
-            style={styles.input}
-            value={draftProfile.location}
-          />
+          <Pressable
+            onPress={() => setMapPickerVisible(true)}
+            style={styles.locationCard}
+          >
+            <Ionicons name="map-outline" size={20} color={colors.primary} />
+            <View style={styles.locationCardCopy}>
+              <Text style={styles.locationCardText} numberOfLines={1}>
+                {draftProfile.location || 'Toca para seleccionar ubicacion'}
+              </Text>
+              {draftProfile.latitude != null ? (
+                <Text style={styles.locationCardCoords}>
+                  {draftProfile.latitude.toFixed(4)}, {draftProfile.longitude.toFixed(4)}
+                </Text>
+              ) : null}
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </Pressable>
 
-          {profile.role === 'walker' || profile.role === 'caregiver' ? (
+          {profile.role === 'walker' ? (
             <>
               <Text style={styles.label}>Experiencia</Text>
               <TextInput
@@ -711,6 +736,23 @@ function Profile({ user, onLogout, onUserUpdate }) {
         <Ionicons name="log-out-outline" size={20} color="#ffffff" />
         <Text style={styles.logoutButtonText}>Cerrar sesion</Text>
       </Pressable>
+
+      <MapPicker
+        visible={mapPickerVisible}
+        initialLatitude={draftProfile.latitude}
+        initialLongitude={draftProfile.longitude}
+        initialAddress={draftProfile.location}
+        onConfirm={({ latitude, longitude, address }) => {
+          setDraftProfile((prev) => ({
+            ...prev,
+            latitude,
+            location: address,
+            longitude,
+          }));
+          setMapPickerVisible(false);
+        }}
+        onCancel={() => setMapPickerVisible(false)}
+      />
     </ScrollView>
   );
 }
@@ -1184,6 +1226,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  locationCard: {
+    alignItems: 'center',
+    backgroundColor: colors.input,
+    borderColor: colors.line,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  locationCardCopy: {
+    flex: 1,
+  },
+  locationCardText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  locationCardCoords: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   textarea: {
     minHeight: 110,

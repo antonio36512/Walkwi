@@ -1,54 +1,11 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, shadows } from '../styles/theme';
-
-const providers = [
-  {
-    id: 1,
-    name: 'Carlos Rodriguez',
-    rating: 4.9,
-    reviews: 127,
-    experience:
-      'Experiencia de 5 anos paseando perros de todas las razas. Especializado en perros grandes y activos.',
-    location: 'Via Argentina',
-    price: '$15/paseo',
-    badge: 'Verificado',
-  },
-  {
-    id: 2,
-    name: 'Maria Lopez',
-    rating: 4.8,
-    reviews: 98,
-    experience:
-      'Paseadora con 3 anos de experiencia. Adoro caminar y socializar perros pequenos.',
-    location: 'El Cangrejo',
-    price: '$12/paseo',
-    badge: 'Verificado',
-  },
-  {
-    id: 3,
-    name: 'Juan Garcia',
-    rating: 4.7,
-    reviews: 84,
-    experience:
-      'Paseador profesional. Ofrezco paseos diarios, adiestramiento basico y cuidado personalizado.',
-    location: 'Obarrio',
-    price: '$14/paseo',
-    badge: 'Superanfitrion',
-  },
-  {
-    id: 4,
-    name: 'Sofia Martin',
-    rating: 4.9,
-    reviews: 156,
-    experience:
-      'Especialista en paseos para mascotas con necesidades especiales. Entrenamiento positivo y mucho amor.',
-    location: 'San Francisco',
-    price: '$16/paseo',
-    badge: 'Verificado',
-  },
-];
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { colors, shadows } from '../../src/styles/theme';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { apiRequest } from '../../src/services/api';
+import FilterSheet from '../../src/components/FilterSheet';
 
 const initialRequests = [
   {
@@ -59,17 +16,19 @@ const initialRequests = [
     location: 'Via Argentina',
     pet: 'Luna',
     service: 'Paseo',
+    type: 'walker',
     notes: 'Luna es tranquila, pero se asusta con motos.',
   },
   {
     id: 2,
     client: 'Miguel Santos',
-    date: 'Manana, 9:00 a.m.',
-    duration: '1 hora',
+    date: 'Mañana, 9:00 a.m.',
+    duration: '2 horas',
     location: 'El Cangrejo',
     pet: 'Rocky',
     service: 'Paseo',
-    notes: 'Necesita agua fresca y una caminata corta.',
+    type: 'walker',
+    notes: 'Rocky es muy enérgico, necesita correr bastante.',
   },
   {
     id: 3,
@@ -79,25 +38,27 @@ const initialRequests = [
     location: 'Obarrio',
     pet: 'Milo',
     service: 'Paseo',
+    type: 'walker',
     notes: 'Milo convive bien con otros perros.',
   },
 ];
 
-const locations = ['Todas', 'Via Argentina', 'El Cangrejo', 'Obarrio', 'San Francisco'];
-
-function Services({ user }) {
+function Services() {
+  const { user } = useAuth();
   const role = user?.role || 'user';
 
   if (role === 'walker') {
-    return <ProviderRequests />;
+    return <ProviderRequests role={role} />;
   }
 
   return <UserServices />;
 }
 
-function ProviderRequests() {
+function ProviderRequests({ role }) {
   const [requests, setRequests] = useState(
-    initialRequests.map((request) => ({ ...request, status: 'pending' })),
+    initialRequests
+      .filter((request) => request.type === role)
+      .map((request) => ({ ...request, status: 'pending' })),
   );
 
   const handleDecision = (id, status) => {
@@ -114,10 +75,10 @@ function ProviderRequests() {
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
       <View style={styles.heroBlock}>
-        <Text style={styles.eyebrow}>Solicitudes de paseo</Text>
+        <Text style={styles.eyebrow}>Solicitudes</Text>
         <Text style={styles.title}>Solicitudes por revisar</Text>
         <Text style={styles.heroCopy}>
-          Acepta o deniega solicitudes de paseo segun tu disponibilidad.
+          Acepta o deniega solicitudes de clientes según tu disponibilidad.
         </Text>
       </View>
 
@@ -179,16 +140,17 @@ function ProviderRequests() {
           <View style={styles.emptyState}>
             <Ionicons name="checkmark-done-circle-outline" size={32} color={colors.primary} />
             <Text style={styles.emptyTitle}>No hay solicitudes pendientes</Text>
-            <Text style={styles.emptyCopy}>Cuando recibas nuevas solicitudes apareceran aqui.</Text>
+            <Text style={styles.emptyCopy}>Cuando recibas nuevas solicitudes aparecerán aquí.</Text>
           </View>
         )}
       </View>
 
-      {decidedRequests.length > 0 && (
+      {decidedRequests.length > 0 ? (
         <View style={styles.historyBlock}>
           <Text style={styles.sectionTitle}>Historial reciente</Text>
           {decidedRequests.map((request) => {
             const accepted = request.status === 'accepted';
+
             return (
               <View key={request.id} style={styles.historyItem}>
                 <View style={styles.historyTitleRow}>
@@ -213,122 +175,219 @@ function ProviderRequests() {
             );
           })}
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
 
-function UserServices() {
-  const [selectedLocation, setSelectedLocation] = useState('Todas');
+const priceRanges = [
+  { key: 'all', label: 'Todos', min: null, max: null },
+  { key: '0-12', label: '$0 - $12', min: 0, max: 12 },
+  { key: '12-15', label: '$12 - $15', min: 12, max: 15 },
+  { key: '15-20', label: '$15 - $20', min: 15, max: 20 },
+  { key: '20+', label: '$20+', min: 20, max: null },
+];
 
-  const filteredProviders = useMemo(
-    () =>
-      providers.filter((provider) =>
-        selectedLocation === 'Todas' ? true : provider.location === selectedLocation,
-      ),
-    [selectedLocation],
-  );
+const ratingOptions = [
+  { key: 'all', label: 'Todos', value: null },
+  { key: '4.5', label: '4.5+', value: 4.5 },
+  { key: '4.7', label: '4.7+', value: 4.7 },
+  { key: '4.9', label: '4.9+', value: 4.9 },
+];
+
+function UserServices() {
+  const router = useRouter();
+  const [walkers, setWalkers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState('Todas');
+  const [selectedPrice, setSelectedPrice] = useState(priceRanges[0]);
+  const [selectedRating, setSelectedRating] = useState(ratingOptions[0]);
+  const [activeFilter, setActiveFilter] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchWalkers() {
+      try {
+        const data = await apiRequest('/api/walkers');
+        if (mounted) setWalkers(data);
+      } catch (err) {
+        if (mounted) setError(err.message || 'Error al cargar paseadores.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    fetchWalkers();
+    return () => { mounted = false; };
+  }, []);
+
+  const locations = useMemo(() => {
+    const fromWalkers = walkers.map((w) => w.location).filter(Boolean);
+    const unique = [...new Set(fromWalkers)];
+    return [{ key: 'all', label: 'Todas' }, ...unique.map((l) => ({ key: l, label: l }))];
+  }, [walkers]);
+
+  const filteredWalkers = useMemo(() => {
+    return walkers.filter((w) => {
+      const matchesLocation = selectedLocation === 'Todas' || w.location === selectedLocation;
+      const matchesPrice =
+        (selectedPrice.min === null || w.pricePerHour >= selectedPrice.min) &&
+        (selectedPrice.max === null || w.pricePerHour <= selectedPrice.max);
+      const matchesRating = selectedRating.value === null || w.rating >= selectedRating.value;
+      return matchesLocation && matchesPrice && matchesRating;
+    });
+  }, [walkers, selectedLocation, selectedPrice, selectedRating]);
+
+  const locationOptions = locations;
+  const activeLocationKey = locations.find((l) => l.label === selectedLocation)?.key || 'all';
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
       <View style={styles.heroBlock}>
-        <Text style={styles.eyebrow}>Paseadores</Text>
-        <Text style={styles.title}>Encuentra tu paseador ideal</Text>
+        <Text style={styles.eyebrow}>Nuestros servicios</Text>
+        <Text style={styles.title}>Paseadores</Text>
         <Text style={styles.heroCopy}>
-          Conecta con paseadores verificados cerca de ti para paseos diarios seguros y divertidos.
+          Encuentra paseadores de confianza para pasear a tu mascota cuando lo necesites.
         </Text>
       </View>
 
-      <View style={styles.filterBlock}>
-        <View style={styles.filterLabelRow}>
-          <Ionicons name="location-outline" size={17} color={colors.primary} />
-          <Text style={styles.filterLabel}>Ubicacion</Text>
+      <View style={styles.filterBar}>
+        <Pressable
+          style={[styles.filterTrigger, selectedLocation !== 'Todas' && styles.filterTriggerActive]}
+          onPress={() => setActiveFilter('location')}
+        >
+          <Ionicons name="location-outline" size={16} color={selectedLocation !== 'Todas' ? '#fff' : colors.primary} />
+          <Text style={[styles.filterTriggerText, selectedLocation !== 'Todas' && styles.filterTriggerTextActive]}>
+            {selectedLocation}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={selectedLocation !== 'Todas' ? '#fff' : colors.textMuted} />
+        </Pressable>
+
+        <Pressable
+          style={[styles.filterTrigger, selectedPrice.key !== 'all' && styles.filterTriggerActive]}
+          onPress={() => setActiveFilter('price')}
+        >
+          <Ionicons name="cash-outline" size={16} color={selectedPrice.key !== 'all' ? '#fff' : colors.primary} />
+          <Text style={[styles.filterTriggerText, selectedPrice.key !== 'all' && styles.filterTriggerTextActive]}>
+            {selectedPrice.label}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={selectedPrice.key !== 'all' ? '#fff' : colors.textMuted} />
+        </Pressable>
+
+        <Pressable
+          style={[styles.filterTrigger, selectedRating.key !== 'all' && styles.filterTriggerActive]}
+          onPress={() => setActiveFilter('rating')}
+        >
+          <Ionicons name="star-outline" size={16} color={selectedRating.key !== 'all' ? '#fff' : colors.primary} />
+          <Text style={[styles.filterTriggerText, selectedRating.key !== 'all' && styles.filterTriggerTextActive]}>
+            {selectedRating.label}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={selectedRating.key !== 'all' ? '#fff' : colors.textMuted} />
+        </Pressable>
+      </View>
+
+      <FilterSheet
+        visible={activeFilter === 'location'}
+        title="Ubicación"
+        options={locationOptions}
+        selectedKey={activeLocationKey}
+        onSelect={(opt) => setSelectedLocation(opt.label)}
+        onClose={() => setActiveFilter(null)}
+      />
+
+      <FilterSheet
+        visible={activeFilter === 'price'}
+        title="Precio por hora"
+        options={priceRanges}
+        selectedKey={selectedPrice.key}
+        onSelect={(opt) => setSelectedPrice(opt)}
+        onClose={() => setActiveFilter(null)}
+      />
+
+      <FilterSheet
+        visible={activeFilter === 'rating'}
+        title="Calificación"
+        options={ratingOptions}
+        selectedKey={selectedRating.key}
+        onSelect={(opt) => setSelectedRating(opt)}
+        onClose={() => setActiveFilter(null)}
+      />
+
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={styles.loadingText}>Cargando paseadores...</Text>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.chipsRow}>
-            {locations.map((location) => {
-              const active = selectedLocation === location;
-              return (
-                <Pressable
-                  key={location}
-                  onPress={() => setSelectedLocation(location)}
-                  style={[styles.chip, active && styles.activeChip]}
-                >
-                  <Text style={[styles.chipText, active && styles.activeChipText]}>
-                    {location}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </View>
-
-      <View style={styles.providersGrid}>
-        {filteredProviders.length > 0 ? (
-          filteredProviders.map((provider) => (
-            <View key={provider.id} style={styles.providerCard}>
-              <View style={styles.providerHeader}>
-                <View style={styles.avatar}>
-                  <Ionicons name="person-outline" size={28} color={colors.primary} />
-                </View>
-
-                <View style={styles.providerInfo}>
-                  <Text style={styles.providerName}>{provider.name}</Text>
-                  <View style={styles.ratingRow}>
-                    <Ionicons name="star" size={15} color={colors.primary} />
-                    <Text style={styles.rating}>{provider.rating}</Text>
-                    <Text style={styles.reviews}>({provider.reviews} resenas)</Text>
+      ) : error ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="alert-circle-outline" size={32} color={colors.danger} />
+          <Text style={styles.emptyTitle}>Error</Text>
+          <Text style={styles.emptyCopy}>{error}</Text>
+        </View>
+      ) : (
+        <View style={styles.providersGrid}>
+          {filteredWalkers.length > 0 ? (
+            filteredWalkers.map((walker) => (
+              <View key={walker._id} style={styles.providerCard}>
+                <View style={styles.providerHeader}>
+                  <View style={styles.avatar}>
+                    {walker.profilePhotoUri ? (
+                      <Image source={{ uri: walker.profilePhotoUri }} style={styles.avatarImage} />
+                    ) : (
+                      <Ionicons name="person-outline" size={28} color={colors.primary} />
+                    )}
                   </View>
+
+                  <View style={styles.providerInfo}>
+                    <Text style={styles.providerName}>{walker.name}</Text>
+                    <View style={styles.ratingRow}>
+                      <Ionicons name="star" size={15} color={colors.primary} />
+                      <Text style={styles.rating}>{walker.rating}</Text>
+                      <Text style={styles.reviews}>({walker.reviewCount} reseñas)</Text>
+                    </View>
+                  </View>
+
+                  {walker.verified ? (
+                    <View style={styles.badgeVerified}>
+                      <Text style={styles.badgeVerifiedText}>Verificado</Text>
+                    </View>
+                  ) : null}
                 </View>
 
-                <View style={[styles.badge, badgeStyle(provider.badge)]}>
-                  <Text style={[styles.badgeText, badgeTextStyle(provider.badge)]}>
-                    {provider.badge}
-                  </Text>
+                <Text style={styles.experience}>{walker.experience}</Text>
+
+                <View style={styles.cardFooter}>
+                  <View>
+                    <View style={styles.locationRow}>
+                      <Ionicons name="location-outline" size={15} color={colors.textMuted} />
+                      <Text style={styles.location}>{walker.location}</Text>
+                    </View>
+                    <Text style={styles.price}>${walker.pricePerHour}/hora</Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => router.push(`/walker/${walker._id}`)}
+                    style={styles.contactButton}
+                  >
+                    <Ionicons name="eye-outline" size={17} color="#ffffff" />
+                    <Text style={styles.contactButtonText}>Ver perfil</Text>
+                  </Pressable>
                 </View>
               </View>
-
-              <Text style={styles.experience}>{provider.experience}</Text>
-
-              <View style={styles.cardFooter}>
-                <View>
-                  <View style={styles.locationRow}>
-                    <Ionicons name="location-outline" size={15} color={colors.textMuted} />
-                    <Text style={styles.location}>{provider.location}</Text>
-                  </View>
-                  <Text style={styles.price}>{provider.price}</Text>
-                </View>
-
-                <Pressable style={styles.contactButton}>
-                  <Ionicons name="chatbubble-outline" size={17} color="#ffffff" />
-                  <Text style={styles.contactButtonText}>Contactar</Text>
-                </Pressable>
-              </View>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="search-outline" size={32} color={colors.primary} />
+              <Text style={styles.emptyTitle}>No hay paseadores</Text>
+              <Text style={styles.emptyCopy}>No se encontraron paseadores en esta ubicación.</Text>
             </View>
-          ))
-        ) : (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="dog-side" size={32} color={colors.primary} />
-            <Text style={styles.emptyTitle}>Sin paseadores en esta zona</Text>
-            <Text style={styles.emptyCopy}>Prueba con otra ubicacion para ver mas opciones.</Text>
-          </View>
-        )}
-      </View>
+          )}
+        </View>
+      )}
     </ScrollView>
   );
-}
-
-function badgeStyle(badge) {
-  if (badge === 'Nuevo') return styles.badgeNew;
-  if (badge === 'Superanfitrion') return styles.badgeSuper;
-  return styles.badgeVerified;
-}
-
-function badgeTextStyle(badge) {
-  if (badge === 'Nuevo') return styles.badgeNewText;
-  if (badge === 'Superanfitrion') return styles.badgeSuperText;
-  return styles.badgeVerifiedText;
 }
 
 const styles = StyleSheet.create({
@@ -366,50 +425,47 @@ const styles = StyleSheet.create({
     lineHeight: 27,
     marginTop: 14,
   },
-  cardPressed: {
-    opacity: 0.75,
-  },
-  filterBlock: {
-    alignSelf: 'center',
-    marginTop: 24,
+  filterBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 20,
     maxWidth: 720,
     width: '100%',
   },
-  filterLabelRow: {
+  filterTrigger: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 10,
-  },
-  filterLabel: {
-    color: '#3f4f46',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingRight: 20,
-  },
-  chip: {
     backgroundColor: colors.card,
     borderColor: 'rgba(83, 128, 93, 0.2)',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 14,
+    flexDirection: 'row',
+    flex: 1,
+    gap: 5,
+    paddingHorizontal: 10,
     paddingVertical: 10,
   },
-  activeChip: {
+  filterTriggerActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  chipText: {
+  filterTriggerText: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
+    flex: 1,
   },
-  activeChipText: {
+  filterTriggerTextActive: {
     color: '#ffffff',
+  },
+  centered: {
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 60,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: '700',
   },
   providersGrid: {
     alignSelf: 'center',
@@ -437,6 +493,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     height: 58,
     justifyContent: 'center',
+    overflow: 'hidden',
+    width: 58,
+  },
+  avatarImage: {
+    height: 58,
     width: 58,
   },
   providerInfo: {
@@ -464,33 +525,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  badge: {
+  badgeVerified: {
+    backgroundColor: '#d4f1d8',
     borderRadius: 12,
     paddingHorizontal: 9,
     paddingVertical: 6,
   },
-  badgeText: {
+  badgeVerifiedText: {
+    color: colors.primary,
     fontSize: 10,
     fontWeight: '900',
     textTransform: 'uppercase',
-  },
-  badgeVerified: {
-    backgroundColor: '#d4f1d8',
-  },
-  badgeVerifiedText: {
-    color: colors.primary,
-  },
-  badgeNew: {
-    backgroundColor: colors.warningSoft,
-  },
-  badgeNewText: {
-    color: colors.warning,
-  },
-  badgeSuper: {
-    backgroundColor: '#fce7f3',
-  },
-  badgeSuperText: {
-    color: '#be185d',
   },
   experience: {
     color: '#4c6053',
@@ -691,6 +736,9 @@ const styles = StyleSheet.create({
   },
   deniedText: {
     color: colors.danger,
+  },
+  cardPressed: {
+    opacity: 0.75,
   },
 });
 

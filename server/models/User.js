@@ -27,16 +27,54 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'walker', 'caregiver'],
+    enum: ['user', 'walker'],
     default: 'user',
   },
   location: {
     type: String,
     trim: true,
   },
+  latitude: {
+    type: Number,
+  },
+  longitude: {
+    type: Number,
+  },
   experience: {
     type: String,
     trim: true,
+  },
+  rating: {
+    type: Number,
+    default: 0,
+  },
+  reviewCount: {
+    type: Number,
+    default: 0,
+  },
+  pricePerHour: {
+    type: Number,
+    default: 0,
+  },
+  verified: {
+    type: Boolean,
+    default: false,
+  },
+  bio: {
+    type: String,
+    trim: true,
+  },
+  availableDays: [{
+    type: String,
+    enum: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'],
+  }],
+  availableHours: {
+    start: { type: String },
+    end: { type: String },
+  },
+  completedWalks: {
+    type: Number,
+    default: 0,
   },
   pets: [{
     name: {

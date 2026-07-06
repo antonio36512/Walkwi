@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, shadows } from '../styles/theme';
+import { useRouter } from 'expo-router';
+import { colors, shadows } from '../../src/styles/theme';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { apiRequest } from '../../src/services/api';
 
 function getStatsForRole(role) {
   const baseStats = [
@@ -13,7 +17,7 @@ function getStatsForRole(role) {
     },
   ];
 
-  if (role === 'walker' || role === 'caregiver') {
+  if (role === 'walker') {
     baseStats.push({ icon: 'star-outline', value: '4.8', label: 'Tu calificacion' });
   }
 
@@ -21,7 +25,7 @@ function getStatsForRole(role) {
 }
 
 function getCardsForRole(role) {
-  if (role === 'walker' || role === 'caregiver') {
+  if (role === 'walker') {
     return [
       {
         icon: 'clipboard-list-outline',
@@ -29,21 +33,21 @@ function getCardsForRole(role) {
         title: 'Solicitudes',
         text: 'Revisa nuevas solicitudes de servicio y decide cuales aceptar o denegar.',
         action: 'Ver solicitudes',
-        route: 'services',
+        route: '/(tabs)/services',
       },
       {
         icon: 'analytics-outline',
         title: 'Tu actividad',
         text: 'Consulta servicios aceptados, solicitudes recientes y tu historial.',
         action: 'Ver actividad',
-        route: 'profile',
+        route: '/(tabs)/profile',
       },
       {
         icon: 'person-circle-outline',
         title: 'Tu perfil',
         text: 'Actualiza tus datos, experiencia y preferencias para recibir mejores solicitudes.',
         action: 'Ir al perfil',
-        route: 'profile',
+        route: '/(tabs)/profile',
       },
     ];
   }
@@ -55,21 +59,21 @@ function getCardsForRole(role) {
       title: 'Servicios destacados',
       text: 'Encuentra paseadores, cuidadores y las mejores opciones para tu mascota en tu zona.',
       action: 'Explorar',
-      route: 'services',
+      route: '/(tabs)/services',
     },
     {
       icon: 'time-outline',
       title: 'Tu actividad',
       text: 'Revisa tus proximas reservas, historial de servicios y manten todo bajo control.',
       action: 'Ver actividad',
-      route: 'profile',
+      route: '/(tabs)/profile',
     },
     {
       icon: 'person-circle-outline',
       title: 'Tu perfil',
       text: 'Accede a tu informacion, mascotas registradas y preferencias.',
       action: 'Ir al perfil',
-      route: 'profile',
+      route: '/(tabs)/profile',
     },
   ];
 }
@@ -100,12 +104,37 @@ function AppIcon({ library = 'ion', name, size = 24, color = colors.primary }) {
   return <Ionicons color={color} name={name} size={size} />;
 }
 
-function Home({ navigate, user }) {
+function Home() {
+  const router = useRouter();
+  const { user } = useAuth();
   const displayName = user?.name || 'Usuario Walkwi';
   const role = user?.role || 'user';
   const stats = getStatsForRole(role);
   const cards = getCardsForRole(role);
-  const isProvider = role === 'walker' || role === 'caregiver';
+  const isProvider = role === 'walker';
+  const [upcomingBooking, setUpcomingBooking] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function fetchUpcoming() {
+      try {
+        const data = await apiRequest('/api/bookings/me/upcoming');
+        if (mounted) setUpcomingBooking(data);
+      } catch {}
+    }
+    fetchUpcoming();
+    return () => { mounted = false; };
+  }, []);
+
+  function formatDate(dateStr) {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((date - now) / (1000 * 60 * 60 * 24));
+    const time = date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 0) return `Hoy, ${time}`;
+    if (diffDays === 1) return `Mañana, ${time}`;
+    return date.toLocaleDateString('es', { day: 'numeric', month: 'short' }) + `, ${time}`;
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
@@ -118,6 +147,27 @@ function Home({ navigate, user }) {
             : 'Conecta con paseadores y cuidadores de mascotas de confianza en tu zona.'}
         </Text>
       </View>
+
+      {upcomingBooking && (
+        <Pressable
+          onPress={() => router.push('/(tabs)/agenda')}
+          style={({ pressed }) => [styles.upcomingCard, pressed && styles.cardPressed]}
+        >
+          <View style={styles.upcomingHeader}>
+            <Ionicons name="paw-outline" size={20} color={colors.primary} />
+            <Text style={styles.upcomingLabel}>Próximo paseo</Text>
+          </View>
+          <Text style={styles.upcomingDate}>{formatDate(upcomingBooking.startTime)}</Text>
+          <Text style={styles.upcomingPerson}>
+            {role === 'user' ? upcomingBooking.walker?.name : upcomingBooking.client?.name}
+          </Text>
+          <Text style={styles.upcomingLocation}>{upcomingBooking.location?.address}</Text>
+          <View style={styles.upcomingLinkRow}>
+            <Text style={styles.upcomingLink}>Ver detalles</Text>
+            <Ionicons color={colors.primary} name="arrow-forward" size={14} />
+          </View>
+        </Pressable>
+      )}
 
       <View style={styles.statsContainer}>
         {stats.map((stat) => (
@@ -133,7 +183,7 @@ function Home({ navigate, user }) {
         {cards.map((card) => (
           <Pressable
             key={card.title}
-            onPress={() => navigate(card.route)}
+            onPress={() => router.push(card.route)}
             style={({ pressed }) => [styles.dashboardCard, pressed && styles.cardPressed]}
           >
             <View style={styles.cardIconWrap}>
@@ -203,6 +253,58 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 27,
     marginTop: 14,
+  },
+  upcomingCard: {
+    ...shadows.card,
+    alignSelf: 'center',
+    backgroundColor: colors.primarySoft,
+    borderColor: 'rgba(83, 128, 93, 0.15)',
+    borderRadius: 22,
+    borderWidth: 1,
+    maxWidth: 720,
+    marginTop: 20,
+    padding: 18,
+    width: '100%',
+  },
+  upcomingHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  upcomingLabel: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  upcomingDate: {
+    color: colors.primary,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  upcomingPerson: {
+    color: '#15382d',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  upcomingLocation: {
+    color: '#4c6053',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  upcomingLinkRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 12,
+  },
+  upcomingLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '900',
   },
   statsContainer: {
     alignSelf: 'center',

@@ -10,17 +10,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { apiRequest } from '../services/api';
-import { colors, shadows } from '../styles/theme';
+import { apiRequest } from '../../src/services/api';
+import { colors, shadows } from '../../src/styles/theme';
 
 const roles = [
   { value: 'user', title: 'Usuario', icon: 'person-outline', family: 'ion' },
   { value: 'walker', title: 'Paseador', icon: 'dog-side', family: 'material' },
 ];
 
-function Register({ navigate }) {
+function Register() {
+  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -133,7 +135,7 @@ function Register({ navigate }) {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Image source={require("../assets/LogoNombre.png")} style={styles.logo} />
+          <Image source={require("../../src/assets/LogoNombre.png")} style={styles.logo} />
 
           <Text style={styles.title}>Crear cuenta</Text>
           <Text style={styles.subtitle}>
@@ -287,7 +289,7 @@ function Register({ navigate }) {
 
           <View style={styles.registerRow}>
             <Text style={styles.mutedText}>Ya tienes cuenta?</Text>
-            <Pressable onPress={() => navigate('login')}>
+            <Pressable onPress={() => router.back()}>
               <Text style={styles.registerLink}>Iniciar sesion</Text>
             </Pressable>
           </View>

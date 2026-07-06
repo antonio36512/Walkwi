@@ -10,11 +10,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { apiRequest } from '../services/api';
-import { saveSession } from '../storage/session';
-import { colors, shadows } from '../styles/theme';
+import { useRouter } from 'expo-router';
+import { apiRequest } from '../../src/services/api';
+import { saveSession } from '../../src/storage/session';
+import { colors, shadows } from '../../src/styles/theme';
+import { useAuth } from '../../src/contexts/AuthContext';
 
-function Login({ navigate, onLogin }) {
+function Login() {
+  const router = useRouter();
+  const { handleAuth } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -35,7 +39,7 @@ function Login({ navigate, onLogin }) {
 
       await saveSession(data.token, data.user);
       setMessage('Inicio de sesión correcto.');
-      onLogin(data.user);
+      handleAuth(data.user);
     } catch (requestError) {
       setError(requestError.message || 'Error de conexión. Intenta otra vez.');
     } finally {
@@ -50,7 +54,7 @@ function Login({ navigate, onLogin }) {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
-          <Image source={require("../assets/LogoNombre.png")} style={styles.logo} />
+          <Image source={require("../../src/assets/LogoNombre.png")} style={styles.logo} />
 
           <View style={styles.hero}>
             <Text style={styles.title}>Bienvenido de nuevo</Text>
@@ -112,7 +116,7 @@ function Login({ navigate, onLogin }) {
 
           <View style={styles.registerRow}>
             <Text style={styles.mutedText}>¿No tienes cuenta?</Text>
-            <Pressable onPress={() => navigate('register')}>
+            <Pressable onPress={() => router.push('/(auth)/register')}>
               <Text style={styles.registerLink}>Crear cuenta</Text>
             </Pressable>
           </View>

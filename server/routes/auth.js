@@ -50,14 +50,24 @@ function authenticate(req, res, next) {
 
 function serializeUser(user) {
   return {
+    availableDays: user.availableDays,
+    availableHours: user.availableHours,
+    bio: user.bio,
+    completedWalks: user.completedWalks,
     email: user.email,
     experience: user.experience,
+    latitude: user.latitude,
     location: user.location,
+    longitude: user.longitude,
     name: user.name,
     pets: user.pets,
     phone: user.phone,
+    pricePerHour: user.pricePerHour,
     profilePhotoUri: user.profilePhotoUri,
+    rating: user.rating,
+    reviewCount: user.reviewCount,
     role: user.role,
+    verified: user.verified,
   };
 }
 
@@ -71,6 +81,7 @@ router.post('/register', async (req, res) => {
       location,
       experience,
       profilePhotoUri,
+      pricePerHour,
       pets = [],
     } = req.body;
 
@@ -78,7 +89,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Por favor ingresa todos los datos requeridos.' });
     }
 
-    if (!['user', 'walker', 'caregiver'].includes(role)) {
+    if (!['user', 'walker'].includes(role)) {
       return res.status(400).json({ error: 'Tipo de usuario no valido.' });
     }
 
@@ -104,9 +115,10 @@ router.post('/register', async (req, res) => {
       role,
     };
 
-    if (role === 'walker' || role === 'caregiver') {
+    if (role === 'walker') {
       userData.location = location;
       userData.experience = experience;
+      userData.pricePerHour = Number(pricePerHour) || 0;
     }
 
     if (role === 'user' && pets.length > 0) {
@@ -196,7 +208,7 @@ router.patch('/me/profile-photo', authenticate, async (req, res) => {
 
 router.patch('/me/profile', authenticate, async (req, res) => {
   try {
-    const { name, phone, location, experience, profilePhotoUri } = req.body;
+    const { name, phone, location, latitude, longitude, experience, profilePhotoUri, pricePerHour } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'El nombre es obligatorio.' });
@@ -204,9 +216,12 @@ router.patch('/me/profile', authenticate, async (req, res) => {
 
     const update = {
       experience,
+      latitude: latitude != null ? Number(latitude) : undefined,
       location,
+      longitude: longitude != null ? Number(longitude) : undefined,
       name: name.trim(),
       phone,
+      pricePerHour: Number(pricePerHour) || undefined,
       profilePhotoUri,
     };
 
