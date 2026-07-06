@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { colors, shadows } from '../../src/styles/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { apiRequest } from '../../src/services/api';
+import TrackingMap from '../../src/components/TrackingMap';
 
 const CLIENT_TABS = [
   { key: 'pending', label: 'Pendientes' },
   { key: 'accepted', label: 'Próximas' },
+  { key: 'in_progress', label: 'En progreso' },
   { key: 'completed', label: 'Historial' },
   { key: 'cancelled', label: 'Canceladas' },
 ];
@@ -15,6 +18,7 @@ const CLIENT_TABS = [
 const WALKER_TABS = [
   { key: 'pending', label: 'Pendientes' },
   { key: 'accepted', label: 'Aceptadas' },
+  { key: 'in_progress', label: 'En progreso' },
   { key: 'completed', label: 'Historial' },
   { key: 'cancelled', label: 'Canceladas' },
 ];
@@ -22,6 +26,7 @@ const WALKER_TABS = [
 const STATUS_CONFIG = {
   pending: { color: '#f59e0b', bg: '#fef3c7', label: 'Pendiente' },
   accepted: { color: '#10b981', bg: '#d1fae5', label: 'Aceptada' },
+  in_progress: { color: '#f97316', bg: '#ffedd5', label: 'En progreso' },
   completed: { color: '#6366f1', bg: '#e0e7ff', label: 'Completada' },
   cancelled: { color: '#ef4444', bg: '#fee2e2', label: 'Cancelada' },
 };
@@ -57,6 +62,13 @@ function Agenda() {
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [verifyModalVisible, setVerifyModalVisible] = useState(false);
+  const [verifyBooking, setVerifyBooking] = useState(null);
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyError, setVerifyError] = useState('');
+  const [trackingVisible, setTrackingVisible] = useState(false);
+  const [trackingBooking, setTrackingBooking] = useState(null);
+  const gpsSubRef = useRef(null);
 
   const fetchBookings = async () => {
     try {
@@ -73,6 +85,64 @@ function Agenda() {
   useEffect(() => {
     fetchBookings();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (role !== 'walker') {
+      stopGpsCapture();
+      return;
+    }
+
+    let cancelled = false;
+
+    async function checkInProgress() {
+      try {
+        const data = await apiRequest('/api/bookings?status=in_progress');
+        if (cancelled) return;
+        if (data.length > 0) {
+          startGpsCapture(data[0]._id);
+        } else {
+          stopGpsCapture();
+        }
+      } catch {
+        stopGpsCapture();
+      }
+    }
+
+    checkInProgress();
+
+    const interval = setInterval(checkInProgress, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      stopGpsCapture();
+    };
+  }, [role]);
+
+  const startGpsCapture = async (bookingId) => {
+    stopGpsCapture();
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      gpsSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+        (loc) => {
+          apiRequest(`/api/bookings/${bookingId}/location`, {
+            method: 'POST',
+            body: JSON.stringify({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }),
+          }).catch(() => {});
+        },
+      );
+    } catch {}
+  };
+
+  const stopGpsCapture = () => {
+    if (gpsSubRef.current) {
+      gpsSubRef.current.remove();
+      gpsSubRef.current = null;
+    }
+  };
 
   const handleStatusChange = async (bookingId, newStatus, reason) => {
     try {
@@ -95,6 +165,33 @@ function Agenda() {
   const openCancelModal = (booking) => {
     setSelectedBooking(booking);
     setCancelModalVisible(true);
+  };
+
+  const openVerifyModal = (booking) => {
+    setVerifyBooking(booking);
+    setVerifyCode('');
+    setVerifyError('');
+    setVerifyModalVisible(true);
+  };
+
+  const handleVerifyCode = async () => {
+    if (!verifyCode.trim() || !verifyBooking) return;
+    try {
+      setActionLoading(true);
+      setVerifyError('');
+      await apiRequest(`/api/bookings/${verifyBooking._id}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ code: verifyCode.trim() }),
+      });
+      fetchBookings();
+      setVerifyModalVisible(false);
+      setVerifyBooking(null);
+      setVerifyCode('');
+    } catch (err) {
+      setVerifyError(err.message || 'Codigo incorrecto.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
@@ -203,16 +300,85 @@ function Agenda() {
                   {role === 'walker' && booking.status === 'accepted' && (
                     <View style={styles.actionsRow}>
                       <Pressable
-                        onPress={() => handleStatusChange(booking._id, 'completed')}
-                        style={({ pressed }) => [styles.completeButton, pressed && styles.cardPressed]}
+                        onPress={() => openVerifyModal(booking)}
+                        style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
                       >
-                        <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
-                        <Text style={styles.completeButtonText}>Completar</Text>
+                        <Ionicons name="play-outline" size={18} color="#fff" />
+                        <Text style={styles.startButtonText}>Iniciar paseo</Text>
                       </Pressable>
                     </View>
                   )}
 
-                  {role === 'user' && ['pending', 'accepted'].includes(booking.status) && (
+                  {role === 'walker' && booking.status === 'in_progress' && (
+                    <View style={styles.actionsRow}>
+                      <Pressable
+                        onPress={() => openVerifyModal(booking)}
+                        style={({ pressed }) => [styles.completeButton, pressed && styles.cardPressed]}
+                      >
+                        <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+                        <Text style={styles.completeButtonText}>Entregar mascota</Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {role === 'user' && booking.status === 'accepted' && (
+                    <View>
+                      <View style={styles.codesBlock}>
+                        <Text style={styles.codesTitle}>Comparte estos codigos con el paseador:</Text>
+                        <View style={styles.codesRow}>
+                          <View style={styles.codeBadge}>
+                            <Text style={styles.codeLabel}>Inicio</Text>
+                            <Text style={styles.codeValue}>{booking.startCode || '----'}</Text>
+                          </View>
+                          <View style={styles.codeBadge}>
+                            <Text style={styles.codeLabel}>Entrega</Text>
+                            <Text style={styles.codeValue}>{booking.endCode || '----'}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <View style={styles.actionsRow}>
+                        <Pressable
+                          onPress={() => openCancelModal(booking)}
+                          style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                          <Text style={styles.denyButtonText}>Cancelar</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+
+                  {role === 'user' && booking.status === 'in_progress' && (
+                    <View>
+                      <View style={styles.codesBlock}>
+                        <Text style={styles.codesTitle}>Codigo de entrega:</Text>
+                        <View style={styles.codesRow}>
+                          <View style={[styles.codeBadge, styles.codeBadgeLarge]}>
+                            <Text style={styles.codeLabel}>Entrega</Text>
+                            <Text style={styles.codeValue}>{booking.endCode || '----'}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <View style={styles.actionsRow}>
+                        <Pressable
+                          onPress={() => { setTrackingBooking(booking); setTrackingVisible(true); }}
+                          style={({ pressed }) => [styles.trackingButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="map-outline" size={18} color="#fff" />
+                          <Text style={styles.trackingButtonText}>Ver paseo en vivo</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => openCancelModal(booking)}
+                          style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                          <Text style={styles.denyButtonText}>Cancelar</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+
+                  {role === 'user' && booking.status === 'pending' && (
                     <View style={styles.actionsRow}>
                       <Pressable
                         onPress={() => openCancelModal(booking)}
@@ -273,6 +439,64 @@ function Agenda() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal visible={verifyModalVisible} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setVerifyModalVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>
+              {verifyBooking?.status === 'accepted' ? 'Iniciar paseo' : 'Entregar mascota'}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {verifyBooking?.status === 'accepted'
+                ? 'Pide el codigo de inicio al cliente'
+                : 'Pide el codigo de entrega al cliente'}
+            </Text>
+            <TextInput
+              keyboardType="number-pad"
+              maxLength={4}
+              onChangeText={setVerifyCode}
+              placeholder="Codigo de 4 digitos"
+              placeholderTextColor="#8fa899"
+              style={styles.codeInput}
+              value={verifyCode}
+            />
+            {verifyError ? <Text style={styles.verifyError}>{verifyError}</Text> : null}
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => {
+                  setVerifyModalVisible(false);
+                  setVerifyCode('');
+                  setVerifyError('');
+                }}
+                style={styles.modalCancelButton}
+              >
+                <Text style={styles.modalCancelText}>Volver</Text>
+              </Pressable>
+              <Pressable
+                disabled={verifyCode.trim().length !== 4 || actionLoading}
+                onPress={handleVerifyCode}
+                style={[
+                  styles.modalConfirmButtonGreen,
+                  (verifyCode.trim().length !== 4 || actionLoading) && styles.modalConfirmDisabled,
+                ]}
+              >
+                <Text style={styles.modalConfirmText}>
+                  {actionLoading ? 'Verificando...' : 'Verificar'}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <TrackingMap
+        visible={trackingVisible}
+        bookingId={trackingBooking?._id}
+        role={role}
+        booking={trackingBooking}
+        onCancel={() => { setTrackingVisible(false); setTrackingBooking(null); }}
+      />
     </View>
   );
 }
@@ -470,6 +694,107 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '900',
+  },
+  trackingButton: {
+    alignItems: 'center',
+    backgroundColor: '#0ea5e9',
+    borderRadius: 16,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  trackingButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  startButton: {
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    borderRadius: 16,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  startButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  codesBlock: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#10b981',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    gap: 10,
+    marginTop: 12,
+    padding: 14,
+  },
+  codesTitle: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  codesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  codeBadge: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#10b981',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    flex: 1,
+    paddingVertical: 10,
+  },
+  codeBadgeLarge: {
+    flex: 0,
+    minWidth: 140,
+  },
+  codeLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  codeValue: {
+    color: colors.primary,
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 6,
+    marginTop: 4,
+  },
+  codeInput: {
+    backgroundColor: colors.input,
+    borderColor: colors.line,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 8,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    textAlign: 'center',
+  },
+  verifyError: {
+    color: '#aa3534',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  modalConfirmButtonGreen: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    flex: 1,
+    paddingVertical: 14,
   },
   modalOverlay: {
     backgroundColor: 'rgba(0,0,0,0.4)',
