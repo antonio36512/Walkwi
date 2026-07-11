@@ -11,6 +11,7 @@ import { connectDB } from './database.js';
 import authRoutes from './routes/auth.js';
 import walkersRoutes from './routes/walkers.js';
 import bookingsRoutes from './routes/bookings.js';
+import reportsRoutes from './routes/reports.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -40,6 +41,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/walkers', walkersRoutes);
 app.use('/api/bookings', bookingsRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.get('/api/health', (_, res) => {
   res.json({ status: 'ok', message: 'API de Walkwi en funcionamiento' });

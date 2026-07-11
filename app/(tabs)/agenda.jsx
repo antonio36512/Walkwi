@@ -69,6 +69,12 @@ function Agenda() {
   const [trackingVisible, setTrackingVisible] = useState(false);
   const [trackingBooking, setTrackingBooking] = useState(null);
   const gpsSubRef = useRef(null);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportBooking, setReportBooking] = useState(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
 
   const fetchBookings = async () => {
     try {
@@ -389,6 +395,18 @@ function Agenda() {
                       </Pressable>
                     </View>
                   )}
+
+                  {booking.status === 'completed' && (
+                    <View style={styles.actionsRow}>
+                      <Pressable
+                        onPress={() => { setReportBooking(booking); setReportReason(''); setReportDescription(''); setReportSuccess(false); setReportModalVisible(true); }}
+                        style={({ pressed }) => [styles.reportButton, pressed && styles.cardPressed]}
+                      >
+                        <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+                        <Text style={styles.reportButtonText}>Reportar</Text>
+                      </Pressable>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
@@ -497,6 +515,117 @@ function Agenda() {
         booking={trackingBooking}
         onCancel={() => { setTrackingVisible(false); setTrackingBooking(null); }}
       />
+
+      <Modal visible={reportModalVisible} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => { if (!reportLoading) setReportModalVisible(false); }}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            {reportSuccess ? (
+              <>
+                <View style={styles.reportSuccessBlock}>
+                  <Ionicons name="checkmark-circle" size={48} color={colors.primary} />
+                  <Text style={styles.modalTitle}>Reporte enviado</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Hemos recibido tu reporte. El equipo de soporte lo revisara a la brevedad.
+                  </Text>
+                </View>
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => { setReportModalVisible(false); setReportBooking(null); }}
+                    style={styles.modalConfirmButtonGreen}
+                  >
+                    <Text style={styles.modalConfirmText}>Cerrar</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Reportar problema</Text>
+                <Text style={styles.modalSubtitle}>
+                  Cuentanos que paso durante este paseo
+                </Text>
+
+                <Text style={styles.reportLabel}>Motivo</Text>
+                <View style={styles.reportReasonsRow}>
+                  {[
+                    { key: 'mal_servicio', label: 'Mal servicio' },
+                    { key: 'conducta_inapropiada', label: 'Conducta inapropiada' },
+                    { key: 'no_se_presento', label: 'No se presento' },
+                    { key: 'maltrato_animal', label: 'Maltrato animal' },
+                    { key: 'otro', label: 'Otro' },
+                  ].map((opt) => (
+                    <Pressable
+                      key={opt.key}
+                      onPress={() => setReportReason(opt.key)}
+                      style={[
+                        styles.reportChip,
+                        reportReason === opt.key && styles.reportChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.reportChipText,
+                          reportReason === opt.key && styles.reportChipTextActive,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <TextInput
+                  multiline
+                  onChangeText={setReportDescription}
+                  placeholder="Describe lo sucedido (min. 10 caracteres)"
+                  placeholderTextColor="#8fa899"
+                  style={styles.modalInput}
+                  textAlignVertical="top"
+                  value={reportDescription}
+                />
+
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => setReportModalVisible(false)}
+                    style={styles.modalCancelButton}
+                  >
+                    <Text style={styles.modalCancelText}>Volver</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={!reportReason || reportDescription.trim().length < 10 || reportLoading}
+                    onPress={async () => {
+                      try {
+                        setReportLoading(true);
+                        await apiRequest('/api/reports', {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            bookingId: reportBooking._id,
+                            reason: reportReason,
+                            description: reportDescription.trim(),
+                          }),
+                        });
+                        setReportSuccess(true);
+                      } catch (err) {
+                        alert(err.message || 'Error al enviar el reporte.');
+                      } finally {
+                        setReportLoading(false);
+                      }
+                    }}
+                    style={[
+                      styles.modalConfirmButtonGreen,
+                      (!reportReason || reportDescription.trim().length < 10 || reportLoading) && styles.modalConfirmDisabled,
+                    ]}
+                  >
+                    <Text style={styles.modalConfirmText}>
+                      {reportLoading ? 'Enviando...' : 'Enviar reporte'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -870,6 +999,58 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '900',
+  },
+  reportButton: {
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
+    borderRadius: 16,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  reportButtonText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  reportLabel: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  reportReasonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reportChip: {
+    backgroundColor: colors.input,
+    borderColor: colors.line,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  reportChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  reportChipText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reportChipTextActive: {
+    color: '#ffffff',
+  },
+  reportSuccessBlock: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 20,
   },
 });
 
