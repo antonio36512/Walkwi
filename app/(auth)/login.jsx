@@ -78,7 +78,7 @@ function Login() {
 
             <View style={styles.passwordLabel}>
               <Text style={styles.label}>Contraseña</Text>
-              <Pressable onPress={() => {}}>
+              <Pressable onPress={() => router.push('/forgot-password')}>
                 <Text style={styles.linkText}>¿Olvidaste?</Text>
               </Pressable>
             </View>

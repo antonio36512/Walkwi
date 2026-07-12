@@ -3,8 +3,54 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import User from '../models/User.js';
+import nodemailer from 'nodemailer';
+import { google } from 'googleapis';
 
 dotenv.config();
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
+const EMAIL_FROM = process.env.EMAIL_FROM;
+
+async function sendResetEmail(to, token) {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN || !EMAIL_FROM) {
+    throw new Error('Credenciales de correo no configuradas en .env');
+  }
+
+  const oAuth2Client = new google.auth.OAuth2(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    'https://developers.google.com/oauthplayground',
+  );
+  oAuth2Client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+
+  const accessTokenObj = await oAuth2Client.getAccessToken();
+  const accessToken = accessTokenObj?.token || accessTokenObj;
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      type: 'OAuth2',
+      user: EMAIL_FROM,
+      clientId: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
+      refreshToken: GOOGLE_REFRESH_TOKEN,
+      accessToken,
+    },
+  });
+
+  const mailOptions = {
+    from: EMAIL_FROM,
+    to,
+    subject: 'Walkwi - Recuperación de contraseña',
+    text: `Tu código de recuperación es: ${token}. Este código expira en 1 hora.`,
+    html: `<p>Tu código de recuperación es: <b>${token}</b></p><p>Este código expira en 1 hora.</p>`,
+  };
+
+  const result = await transporter.sendMail(mailOptions);
+  return result;
+}
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -270,6 +316,70 @@ router.post('/login', async (req, res) => {
       token,
       user: serializeUser(user),
     });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Por favor ingresa tu correo.' });
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    const resetToken = String(Math.floor(100000 + Math.random() * 900000));
+    user.passwordResetToken = resetToken;
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
+    await user.save();
+
+    try {
+      const mailResult = await sendResetEmail(user.email, resetToken);
+      console.log('Reset email sent:', mailResult?.accepted || mailResult?.response);
+    } catch (mailError) {
+      console.error('Error sending reset email:', mailError);
+      return res.status(500).json({ error: 'No se pudo enviar el correo de recuperación.' });
+    }
+
+    return res.json({
+      message: 'Código de recuperación enviado por correo. Revisa tu bandeja de entrada.',
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ error: 'Completa correo, token y nueva contraseña.' });
+    }
+
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+      passwordResetToken: token.trim(),
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Token inválido o expirado.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+
+    return res.json({ message: 'Contraseña actualizada con éxito. Ya puedes iniciar sesión.' });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Error interno del servidor.' });
