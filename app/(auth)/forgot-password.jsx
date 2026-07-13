@@ -23,7 +23,7 @@ function ForgotPassword() {
         method: 'POST',
         body: JSON.stringify({ email: email.trim() }),
       });
-      setMessage(`Token generado: ${data.resetToken}`);
+      setMessage('Correo enviado. Revisa tu bandeja de entrada.');
     } catch (requestError) {
       setError(requestError.message || 'Error al enviar el correo de recuperación.');
     } finally {

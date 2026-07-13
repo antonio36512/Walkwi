@@ -72,6 +72,13 @@ function Profile() {
   const [profileError, setProfileError] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
+  const [changePasswordVisible, setChangePasswordVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const handleLogout = async () => {
     await clearSession();
@@ -135,6 +142,53 @@ function Profile() {
     });
     setProfileError('');
     setEditMode(false);
+  };
+
+  const openChangePassword = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError('');
+    setPasswordMessage('');
+    setChangePasswordVisible(true);
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    setPasswordMessage('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('Completa todos los campos.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Las contraseñas nuevas no coinciden.');
+      return;
+    }
+
+    setSavingPassword(true);
+
+    try {
+      await apiRequest('/api/auth/me/change-password', {
+        method: 'PATCH',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      setPasswordMessage('Contraseña actualizada con éxito.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (requestError) {
+      setPasswordError(requestError.message || 'No se pudo cambiar la contraseña.');
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   const updateDraftProfile = (field, value) => {
@@ -471,6 +525,88 @@ function Profile() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setChangePasswordVisible(false)}
+        transparent
+        visible={changePasswordVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <ScrollView
+              contentContainerStyle={styles.modalContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.editProfileCard}>
+                <View style={styles.petFormHeader}>
+                  <Text style={styles.petFormTitle}>Cambiar contraseña</Text>
+                  <Pressable onPress={() => setChangePasswordVisible(false)}>
+                    <Text style={styles.cancelText}>Cancelar</Text>
+                  </Pressable>
+                </View>
+
+                <Text style={styles.label}>Contraseña actual</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  onChangeText={setCurrentPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#8fa899"
+                  secureTextEntry
+                  style={styles.input}
+                  value={currentPassword}
+                />
+
+                <Text style={styles.label}>Nueva contraseña</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  onChangeText={setNewPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#8fa899"
+                  secureTextEntry
+                  style={styles.input}
+                  value={newPassword}
+                />
+
+                <Text style={styles.label}>Confirmar nueva contraseña</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  onChangeText={setConfirmPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#8fa899"
+                  secureTextEntry
+                  style={styles.input}
+                  value={confirmPassword}
+                />
+
+                <View style={styles.editButtonsRow}>
+                  <Pressable onPress={() => setChangePasswordVisible(false)} style={styles.cancelButton}>
+                    <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                    <Text style={styles.cancelButtonText}>Cancelar</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={savingPassword}
+                    onPress={handleChangePassword}
+                    style={({ pressed }) => [
+                      styles.saveProfileButton,
+                      (pressed || savingPassword) && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons name="lock-closed-outline" size={18} color="#ffffff" />
+                    <Text style={styles.saveProfileButtonText}>
+                      {savingPassword ? 'Guardando...' : 'Guardar contraseña'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {passwordError ? <Text style={styles.errorMessage}>{passwordError}</Text> : null}
+                {passwordMessage ? <Text style={styles.successMessage}>{passwordMessage}</Text> : null}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       {profileMessage ? <Text style={styles.profilePhotoSuccess}>{profileMessage}</Text> : null}
 
       {canManagePets ? (
@@ -720,7 +856,7 @@ function Profile() {
         {options.map((option) => (
           <Pressable
             key={option.label}
-            onPress={option.label === 'Editar perfil' ? openProfileEditor : undefined}
+            onPress={option.label === 'Editar perfil' ? openProfileEditor : option.label === 'Cambiar contrasena' ? openChangePassword : undefined}
             style={({ pressed }) => [styles.optionItem, pressed && styles.pressed]}
           >
             <View style={styles.optionLabelRow}>

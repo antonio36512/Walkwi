@@ -9,24 +9,25 @@ import { OAuth2Client } from 'google-auth-library';
 
 dotenv.config();
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const EMAIL_FROM = process.env.EMAIL_FROM;
 const GOOGLE_SIGNIN_CLIENT_ID = process.env.GOOGLE_SIGNIN_CLIENT_ID;
+const GOOGLE_SIGNIN_CLIENT_SECRET = process.env.GOOGLE_SIGNIN_CLIENT_SECRET;
 const GOOGLE_SIGNIN_REDIRECT_URI = process.env.GOOGLE_SIGNIN_REDIRECT_URI;
 
 async function sendResetEmail(to, token) {
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN || !EMAIL_FROM) {
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !EMAIL_FROM) {
     throw new Error('Credenciales de correo no configuradas en .env');
   }
 
   const oAuth2Client = new google.auth.OAuth2(
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET,
     'https://developers.google.com/oauthplayground',
   );
-  oAuth2Client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+  oAuth2Client.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
 
   const accessTokenObj = await oAuth2Client.getAccessToken();
   const accessToken = accessTokenObj?.token || accessTokenObj;
@@ -36,9 +37,9 @@ async function sendResetEmail(to, token) {
     auth: {
       type: 'OAuth2',
       user: EMAIL_FROM,
-      clientId: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-      refreshToken: GOOGLE_REFRESH_TOKEN,
+      clientId: GMAIL_CLIENT_ID,
+      clientSecret: GMAIL_CLIENT_SECRET,
+      refreshToken: GMAIL_REFRESH_TOKEN,
       accessToken,
     },
   });
@@ -290,6 +291,43 @@ router.patch('/me/profile', authenticate, async (req, res) => {
   }
 });
 
+router.patch('/me/change-password', authenticate, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Ingresa tu contraseña actual y la nueva contraseña.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+    }
+
+    const user = await User.findById(req.auth.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    if (user.authProvider === 'google' && !user.password) {
+      return res.status(400).json({ error: 'Tu cuenta fue creada con Google. Establece una contraseña desde "Olvidaste tu contraseña" para poder cambiarla.' });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'La contraseña actual es incorrecta.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    return res.json({ message: 'Contraseña actualizada con éxito.' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -328,7 +366,7 @@ router.post('/login', async (req, res) => {
 router.get('/google', (req, res) => {
   const oauth2Client = new google.auth.OAuth2(
     GOOGLE_SIGNIN_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
+    GOOGLE_SIGNIN_CLIENT_SECRET,
     GOOGLE_SIGNIN_REDIRECT_URI,
   );
 
