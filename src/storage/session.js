@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'walkwi_token';
 const USER_KEY = 'walkwi_user';
+const RESTRICTION_KEY = 'walkwi_account_restriction';
 
 export async function saveSession(token, user) {
   await AsyncStorage.multiSet([
@@ -24,5 +25,18 @@ export async function saveStoredUser(user) {
 }
 
 export async function clearSession() {
-  await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+  await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, RESTRICTION_KEY]);
+}
+
+export async function saveAccountRestriction(restriction) {
+  await AsyncStorage.setItem(RESTRICTION_KEY, JSON.stringify(restriction));
+}
+
+export async function getAccountRestriction() {
+  const value = await AsyncStorage.getItem(RESTRICTION_KEY);
+  return value ? JSON.parse(value) : null;
+}
+
+export async function clearAccountRestriction() {
+  await AsyncStorage.removeItem(RESTRICTION_KEY);
 }
