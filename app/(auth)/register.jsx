@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -23,6 +23,9 @@ const roles = [
 
 function Register() {
   const router = useRouter();
+  const nameRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -98,6 +101,28 @@ function Register() {
   const handleSubmit = async () => {
     setError('');
     setMessage('');
+
+    if (!name.trim()) {
+      setError('Ingresa tu nombre.');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Ingresa tu correo electronico.');
+      return;
+    }
+    if (!password) {
+      setError('Ingresa una contrasena.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('La contrasena debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (showProviderFields && !location.trim()) {
+      setError('Ingresa tu ubicacion.');
+      return;
+    }
+
     setLoading(true);
 
     const body = {
@@ -130,7 +155,8 @@ function Register() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       style={styles.screen}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -198,6 +224,9 @@ function Register() {
               onChangeText={setName}
               placeholder="Tu nombre"
               placeholderTextColor="#8fa899"
+              ref={nameRef}
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
               style={styles.input}
               value={name}
             />
@@ -210,6 +239,9 @@ function Register() {
               onChangeText={setEmail}
               placeholder="alex@example.com"
               placeholderTextColor="#8fa899"
+              ref={emailRef}
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
               style={styles.input}
               value={email}
             />
@@ -264,6 +296,8 @@ function Register() {
               onChangeText={setPassword}
               placeholder="********"
               placeholderTextColor="#8fa899"
+              ref={passwordRef}
+              returnKeyType="done"
               secureTextEntry
               style={styles.input}
               value={password}
@@ -308,6 +342,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingBottom: 80,
   },
   card: {
     ...shadows.card,

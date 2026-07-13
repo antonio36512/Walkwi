@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { colors, shadows } from '../../src/styles/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { apiRequest } from '../../src/services/api';
@@ -18,7 +18,7 @@ function getStatsForRole(role) {
   ];
 
   if (role === 'walker') {
-    baseStats.push({ icon: 'star-outline', value: '4.8', label: 'Tu calificacion' });
+    baseStats.push({ icon: 'star-outline', value: '0', label: 'Tu calificacion' });
   }
 
   return baseStats;
@@ -33,14 +33,14 @@ function getCardsForRole(role) {
         title: 'Solicitudes',
         text: 'Revisa nuevas solicitudes de servicio y decide cuales aceptar o denegar.',
         action: 'Ver solicitudes',
-        route: '/(tabs)/services',
+        route: '/(tabs)/agenda?tab=pending',
       },
       {
         icon: 'analytics-outline',
         title: 'Tu actividad',
         text: 'Consulta servicios aceptados, solicitudes recientes y tu historial.',
         action: 'Ver actividad',
-        route: '/(tabs)/profile',
+        route: '/(tabs)/agenda?tab=completed',
       },
       {
         icon: 'person-circle-outline',
@@ -66,7 +66,7 @@ function getCardsForRole(role) {
       title: 'Tu actividad',
       text: 'Revisa tus proximas reservas, historial de servicios y manten todo bajo control.',
       action: 'Ver actividad',
-      route: '/(tabs)/profile',
+      route: '/(tabs)/agenda?tab=completed',
     },
     {
       icon: 'person-circle-outline',
@@ -106,25 +106,55 @@ function AppIcon({ library = 'ion', name, size = 24, color = colors.primary }) {
 
 function Home() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, handleUserUpdate } = useAuth();
   const displayName = user?.name || 'Usuario Walkwi';
   const role = user?.role || 'user';
-  const stats = getStatsForRole(role);
   const cards = getCardsForRole(role);
   const isProvider = role === 'walker';
   const [upcomingBooking, setUpcomingBooking] = useState(null);
+  const [stats, setStats] = useState(() => getStatsForRole(role));
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    async function fetchUpcoming() {
-      try {
-        const data = await apiRequest('/api/bookings/me/upcoming');
-        if (mounted) setUpcomingBooking(data);
-      } catch {}
+  async function loadData() {
+    try {
+      const freshUser = await apiRequest('/api/auth/me').catch(() => null);
+      if (freshUser) {
+        handleUserUpdate(freshUser);
+      }
+
+      const [accepted, inProgress, pending] = await Promise.all([
+        apiRequest('/api/bookings?status=accepted').then((d) => d?.length ?? 0).catch(() => 0),
+        apiRequest('/api/bookings?status=in_progress').then((d) => d?.length ?? 0).catch(() => 0),
+        apiRequest('/api/bookings?status=pending').then((d) => d?.length ?? 0).catch(() => 0),
+      ]);
+
+      const upcoming = await apiRequest('/api/bookings/me/upcoming').catch(() => null);
+      setUpcomingBooking(upcoming);
+
+      const rating = freshUser?.rating ?? user?.rating ?? 0;
+      const newStats = getStatsForRole(role);
+      if (newStats[0]) newStats[0].value = String(accepted + inProgress);
+      if (newStats[1]) newStats[1].value = String(pending);
+      if (isProvider && newStats[2]) {
+        newStats[2].value = rating ? String(rating) : '0';
+      }
+      setStats(newStats);
+    } catch (err) {
+      console.error('Error loading home data:', err);
     }
-    fetchUpcoming();
-    return () => { mounted = false; };
-  }, []);
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [role, isProvider])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   function formatDate(dateStr) {
     const date = new Date(dateStr);
@@ -137,7 +167,13 @@ function Home() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      style={styles.screen}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
+      }
+    >
       <View style={styles.heroBlock}>
         <Text style={styles.eyebrow}>Bienvenido a Walkwi</Text>
         <Text style={styles.title}>Hola, {displayName}</Text>

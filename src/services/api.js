@@ -33,7 +33,14 @@ export async function apiRequest(path, options = {}) {
     throw new Error(`No se pudo conectar con la API en ${API_URL}. Verifica que el servidor esté encendido.`);
   }
 
-  const data = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  let data;
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    data = { error: text || 'Error inesperado del servidor.' };
+  }
 
   if (!response.ok) {
     throw new Error(data.error || 'No se pudo completar la solicitud.');

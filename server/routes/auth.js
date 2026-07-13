@@ -185,6 +185,19 @@ router.post('/register', async (req, res) => {
   }
 });
 
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    const user = await User.findById(req.auth.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+    return res.json(serializeUser(user));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
+});
+
 router.patch('/me/pets', authenticate, async (req, res) => {
   try {
     const { pets = [] } = req.body;

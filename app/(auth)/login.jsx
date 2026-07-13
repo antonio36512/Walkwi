@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -23,6 +23,8 @@ const GOOGLE_AUTH_URL = process.env.EXPO_PUBLIC_GOOGLE_AUTH_URL || 'http://local
 function Login() {
   const router = useRouter();
   const { handleAuth } = useAuth();
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,6 +45,16 @@ function Login() {
   const handleSubmit = async () => {
     setError('');
     setMessage('');
+
+    if (!email.trim()) {
+      setError('Ingresa tu correo electronico.');
+      return;
+    }
+    if (!password) {
+      setError('Ingresa tu contrasena.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -63,7 +75,8 @@ function Login() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       style={styles.screen}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -102,6 +115,9 @@ function Login() {
               onChangeText={setEmail}
               placeholder="alex@example.com"
               placeholderTextColor="#8fa899"
+              ref={emailRef}
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
               style={styles.input}
               value={email}
             />
@@ -118,6 +134,8 @@ function Login() {
                 onChangeText={setPassword}
                 placeholder="••••••••"
                 placeholderTextColor="#8fa899"
+                ref={passwordRef}
+                returnKeyType="done"
                 secureTextEntry={!showPassword}
                 style={styles.inputInline}
                 value={password}
@@ -171,6 +189,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingBottom: 60,
   },
   card: {
     ...shadows.card,

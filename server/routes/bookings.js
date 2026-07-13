@@ -2,9 +2,15 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
+import { captureOrder, refundPayment } from '../services/paypal.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET;
+
+function calculatePrice(duration) {
+  const d = Math.max(30, Math.min(120, Number(duration) || 30));
+  return Math.round((6 + ((d - 30) / 90) * 9) * 100) / 100;
+}
 
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -59,9 +65,22 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos: walkerId, petName, startTime, duration, address.' });
     }
 
+    const startDateTime = new Date(startTime);
+    if (isNaN(startDateTime.getTime()) || startDateTime <= new Date()) {
+      return res.status(400).json({ error: 'La fecha y hora del paseo debe ser en el futuro.' });
+    }
+
     const walkerUser = await User.findOne({ _id: walkerId, role: 'walker' });
     if (!walkerUser) {
       return res.status(404).json({ error: 'Paseador no encontrado.' });
+    }
+
+    const activeBooking = await Booking.findOne({
+      client: userId,
+      status: { $in: ['accepted', 'in_progress'] },
+    });
+    if (activeBooking) {
+      return res.status(409).json({ error: 'Ya tienes un paseo activo. Debes completar o cancelar el paseo actual antes de reservar otro.' });
     }
 
     const booking = await Booking.create({
@@ -69,7 +88,7 @@ router.post('/', authenticate, async (req, res) => {
       walker: walkerId,
       petName,
       petId: petId || null,
-      startTime: new Date(startTime),
+      startTime: startDateTime,
       duration,
       location: {
         address,
@@ -77,7 +96,7 @@ router.post('/', authenticate, async (req, res) => {
         longitude: longitude != null ? Number(longitude) : undefined,
       },
       notes: notes || '',
-      price: Number(price) || 0,
+      price: Number(price) || calculatePrice(duration),
     });
 
     return res.status(201).json(booking);
@@ -104,7 +123,7 @@ router.get('/', authenticate, async (req, res) => {
     if (petId) filter.petId = petId;
 
     const bookings = await Booking.find(filter)
-      .populate('client', 'name email profilePhotoUri phone')
+      .populate('client', 'name email profilePhotoUri phone latitude longitude')
       .populate('walker', 'name email profilePhotoUri phone location rating pricePerHour')
       .sort({ startTime: 1 });
 
@@ -132,7 +151,7 @@ router.get('/me/upcoming', authenticate, async (req, res) => {
     }
 
     const booking = await Booking.findOne(filter)
-      .populate('client', 'name email profilePhotoUri')
+      .populate('client', 'name email profilePhotoUri phone latitude longitude')
       .populate('walker', 'name email profilePhotoUri')
       .sort({ startTime: 1 });
 
@@ -176,7 +195,7 @@ router.get('/:id', authenticate, async (req, res) => {
   try {
     const userId = req.auth.userId;
     const booking = await Booking.findById(req.params.id)
-      .populate('client', 'name email profilePhotoUri phone')
+      .populate('client', 'name email profilePhotoUri phone latitude longitude')
       .populate('walker', 'name email profilePhotoUri phone location rating pricePerHour');
 
     if (!booking) {
@@ -239,7 +258,7 @@ router.post('/:id/verify', authenticate, async (req, res) => {
     await booking.save();
 
     const updated = await Booking.findById(booking._id)
-      .populate('client', 'name email profilePhotoUri phone')
+      .populate('client', 'name email profilePhotoUri phone latitude longitude')
       .populate('walker', 'name email profilePhotoUri phone location rating pricePerHour');
 
     return res.json(updated);
@@ -283,19 +302,66 @@ router.patch('/:id/status', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Debes indicar un motivo de cancelación.' });
     }
 
+    const originalStatus = booking.status;
+
     booking.status = newStatus;
     if (newStatus === 'cancelled') {
       booking.cancelReason = cancelReason;
+
+      if (booking.paypalOrderId && booking.paymentAmount > 0) {
+        try {
+          if (userRole === 'walker') {
+            if (booking.paypalCaptureId) {
+              await refundPayment(booking.paypalCaptureId, booking.paymentAmount);
+              booking.paymentStatus = 'refunded';
+            }
+          } else {
+            if (originalStatus === 'pending' || originalStatus === 'accepted') {
+              const penaltyAmount = Math.round(booking.paymentAmount * 0.5 * 100) / 100;
+              if (booking.paypalCaptureId) {
+                const refundAmount = booking.paymentAmount - penaltyAmount;
+                if (refundAmount > 0) {
+                  await refundPayment(booking.paypalCaptureId, refundAmount);
+                  booking.paymentStatus = 'partially_refunded';
+                } else {
+                  await refundPayment(booking.paypalCaptureId, booking.paymentAmount);
+                  booking.paymentStatus = 'refunded';
+                }
+              }
+            } else if (originalStatus === 'in_progress') {
+              if (booking.paypalCaptureId) {
+                await refundPayment(booking.paypalCaptureId, booking.paymentAmount);
+                booking.paymentStatus = 'refunded';
+              }
+            }
+          }
+        } catch (payErr) {
+          console.error('PayPal cancel payment error:', payErr);
+        }
+      }
     }
+
     if (newStatus === 'accepted') {
       booking.startCode = generateCode();
       booking.endCode = generateCode();
     }
 
+    if (newStatus === 'completed' && booking.paypalOrderId && booking.paymentStatus === 'pending') {
+      try {
+        const captureResult = await captureOrder(booking.paypalOrderId);
+        if (captureResult.status === 'COMPLETED') {
+          booking.paypalCaptureId = captureResult.captureId;
+          booking.paymentStatus = 'captured';
+        }
+      } catch (payErr) {
+        console.error('PayPal capture error on complete:', payErr);
+      }
+    }
+
     await booking.save();
 
     const updated = await Booking.findById(booking._id)
-      .populate('client', 'name email profilePhotoUri phone')
+      .populate('client', 'name email profilePhotoUri phone latitude longitude')
       .populate('walker', 'name email profilePhotoUri phone location rating pricePerHour');
 
     return res.json(updated);

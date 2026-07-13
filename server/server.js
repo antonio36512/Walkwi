@@ -12,6 +12,8 @@ import authRoutes from './routes/auth.js';
 import walkersRoutes from './routes/walkers.js';
 import bookingsRoutes from './routes/bookings.js';
 import reportsRoutes from './routes/reports.js';
+import reviewsRoutes from './routes/reviews.js';
+import paymentsRoutes from './routes/payments.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -43,6 +45,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/walkers', walkersRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/reviews', reviewsRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 app.get('/api/health', (_, res) => {
   res.json({ status: 'ok', message: 'API de Walkwi en funcionamiento' });

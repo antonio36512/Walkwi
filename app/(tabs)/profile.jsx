@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import {
+  Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -396,7 +399,7 @@ function Profile() {
         transparent
         visible={editMode}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop} contentContainerStyle={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <ScrollView
               contentContainerStyle={styles.modalContent}
@@ -523,7 +526,7 @@ function Profile() {
         </View>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -532,7 +535,7 @@ function Profile() {
         transparent
         visible={changePasswordVisible}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop} contentContainerStyle={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <ScrollView
               contentContainerStyle={styles.modalContent}
@@ -605,7 +608,7 @@ function Profile() {
               </View>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
       {profileMessage ? <Text style={styles.profilePhotoSuccess}>{profileMessage}</Text> : null}
 
@@ -635,7 +638,7 @@ function Profile() {
           transparent
           visible={formVisible}
         >
-          <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView behavior="padding" style={styles.modalBackdrop} contentContainerStyle={styles.modalBackdrop}>
             <View style={styles.modalSheet}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
@@ -793,7 +796,7 @@ function Profile() {
           </View>
               </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {pets.length > 0 ? (
@@ -856,7 +859,15 @@ function Profile() {
         {options.map((option) => (
           <Pressable
             key={option.label}
-            onPress={option.label === 'Editar perfil' ? openProfileEditor : option.label === 'Cambiar contrasena' ? openChangePassword : undefined}
+            onPress={
+              option.label === 'Editar perfil' ? openProfileEditor
+              : option.label === 'Cambiar contrasena' ? openChangePassword
+              : option.label === 'Notificaciones' ? () => Alert.alert('Notificaciones', 'Recibe avisos cuando tus reservas cambien de estado. Puedes desactivarlas desde la configuracion de tu dispositivo.')
+              : option.label === 'Privacidad' ? () => router.push('/(tabs)/privacy')
+              : option.label === 'Ayuda y soporte' ? () => router.push('/(tabs)/help')
+              : option.label === 'Acerca de' ? () => router.push('/(tabs)/about')
+              : undefined
+            }
             style={({ pressed }) => [styles.optionItem, pressed && styles.pressed]}
           >
             <View style={styles.optionLabelRow}>

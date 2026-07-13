@@ -204,6 +204,11 @@ function UserServices() {
   const [selectedPrice, setSelectedPrice] = useState(priceRanges[0]);
   const [selectedRating, setSelectedRating] = useState(ratingOptions[0]);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [expandedCards, setExpandedCards] = useState({});
+
+  const toggleCard = (id) => {
+    setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -358,15 +363,28 @@ function UserServices() {
 
                 <Text style={styles.experience}>{walker.experience}</Text>
 
-                <View style={styles.cardFooter}>
-                  <View>
-                    <View style={styles.locationRow}>
-                      <Ionicons name="location-outline" size={15} color={colors.textMuted} />
-                      <Text style={styles.location}>{walker.location}</Text>
-                    </View>
-                    <Text style={styles.price}>${walker.pricePerHour}/hora</Text>
+                <View style={styles.cardInfoSection}>
+                  <View style={styles.locationRow}>
+                    <Ionicons name="location-outline" size={15} color={colors.textMuted} />
+                    <Text
+                      style={styles.location}
+                      numberOfLines={expandedCards[walker._id] ? undefined : 1}
+                    >
+                      {walker.location}
+                    </Text>
+                    {walker.location && walker.location.length > 30 && (
+                      <Pressable onPress={() => toggleCard(walker._id)}>
+                        <Text style={styles.seeMoreText}>
+                          {expandedCards[walker._id] ? 'ver menos' : 'ver más'}
+                        </Text>
+                      </Pressable>
+                    )}
                   </View>
+                  <Text style={styles.price}>${walker.pricePerHour}/hora</Text>
+                </View>
 
+                <View style={styles.cardFooter}>
+                  <View style={{ flex: 1 }} />
                   <Pressable
                     onPress={() => router.push(`/walker/${walker._id}`)}
                     style={styles.contactButton}
@@ -543,31 +561,41 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginTop: 16,
   },
-  cardFooter: {
-    alignItems: 'center',
-    borderColor: 'rgba(83, 128, 93, 0.12)',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-    marginTop: 16,
-    paddingTop: 16,
+  cardInfoSection: {
+    marginTop: 12,
+    gap: 6,
   },
   locationRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 5,
   },
   location: {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: '800',
+    flex: 1,
+  },
+  seeMoreText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
   },
   price: {
     color: colors.primary,
     fontSize: 16,
     fontWeight: '900',
-    marginTop: 4,
+    marginTop: 2,
+  },
+  cardFooter: {
+    alignItems: 'center',
+    borderColor: 'rgba(83, 128, 93, 0.12)',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 14,
+    paddingTop: 14,
   },
   contactButton: {
     alignItems: 'center',

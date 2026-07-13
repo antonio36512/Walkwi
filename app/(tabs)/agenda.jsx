@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { colors, shadows } from '../../src/styles/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
@@ -31,6 +32,19 @@ const STATUS_CONFIG = {
   cancelled: { color: '#ef4444', bg: '#fee2e2', label: 'Cancelada' },
 };
 
+async function openPhone(url) {
+  try {
+    const can = await Linking.canOpenURL(url);
+    if (can) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert('No disponible', 'No se puede realizar llamadas desde este dispositivo.');
+    }
+  } catch {
+    Alert.alert('Error', 'No se pudo abrir la aplicacion de llamadas.');
+  }
+}
+
 function formatDate(dateStr) {
   const date = new Date(dateStr);
   const now = new Date();
@@ -52,12 +66,17 @@ function formatDate(dateStr) {
 
 function Agenda() {
   const { user } = useAuth();
+  const { tab: initialTab } = useLocalSearchParams();
   const role = user?.role || 'user';
   const tabs = role === 'walker' ? WALKER_TABS : CLIENT_TABS;
 
-  const [activeTab, setActiveTab] = useState(tabs[0].key);
+  const [activeTab, setActiveTab] = useState(() => {
+    if (initialTab && tabs.find((t) => t.key === initialTab)) return initialTab;
+    return tabs[0].key;
+  });
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -69,12 +88,20 @@ function Agenda() {
   const [trackingVisible, setTrackingVisible] = useState(false);
   const [trackingBooking, setTrackingBooking] = useState(null);
   const gpsSubRef = useRef(null);
+  const [locationMapVisible, setLocationMapVisible] = useState(false);
+  const [locationMapBooking, setLocationMapBooking] = useState(null);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportBooking, setReportBooking] = useState(null);
   const [reportReason, setReportReason] = useState('');
   const [reportDescription, setReportDescription] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewBooking, setReviewBooking] = useState(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
 
   const fetchBookings = async () => {
     try {
@@ -89,8 +116,20 @@ function Agenda() {
   };
 
   useEffect(() => {
+    if (initialTab && tabs.find((t) => t.key === initialTab)) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
     fetchBookings();
   }, [activeTab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchBookings();
+    }, [activeTab])
+  );
 
   useEffect(() => {
     if (role !== 'walker') {
@@ -157,12 +196,20 @@ function Agenda() {
         method: 'PATCH',
         body: JSON.stringify({ status: newStatus, cancelReason: reason }),
       });
+
       fetchBookings();
       setSelectedBooking(null);
       setCancelModalVisible(false);
       setCancelReason('');
+      const messages = {
+        accepted: 'Reserva aceptada.',
+        cancelled: 'Reserva cancelada.',
+        in_progress: 'Paseo iniciado.',
+        completed: 'Paseo finalizado.',
+      };
+      Alert.alert('Listo', messages[newStatus] || 'Estado actualizado.');
     } catch (err) {
-      console.error(err);
+      Alert.alert('Error', err.message || 'No se pudo actualizar el estado.');
     } finally {
       setActionLoading(false);
     }
@@ -181,7 +228,14 @@ function Agenda() {
   };
 
   const handleVerifyCode = async () => {
-    if (!verifyCode.trim() || !verifyBooking) return;
+    if (!verifyCode.trim() || !verifyBooking) {
+      Alert.alert('Codigo requerido', 'Ingresa el codigo de 4 digitos.');
+      return;
+    }
+    if (verifyCode.trim().length !== 4) {
+      Alert.alert('Codigo invalido', 'El codigo debe tener exactamente 4 digitos.');
+      return;
+    }
     try {
       setActionLoading(true);
       setVerifyError('');
@@ -193,16 +247,34 @@ function Agenda() {
       setVerifyModalVisible(false);
       setVerifyBooking(null);
       setVerifyCode('');
+      Alert.alert('Codigo verificado', 'El codigo es correcto. Paseo actualizado.');
     } catch (err) {
-      setVerifyError(err.message || 'Codigo incorrecto.');
+      setVerifyError(err.message || 'Codigo incorrecto. Verifica con el cliente.');
     } finally {
       setActionLoading(false);
     }
   };
 
+  const openLocationMap = (booking) => {
+    setLocationMapBooking(booking);
+    setLocationMapVisible(true);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchBookings();
+    setRefreshing(false);
+  };
+
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} style={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        style={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />
+        }
+      >
         <View style={styles.heroBlock}>
           <Text style={styles.eyebrow}>Agenda</Text>
           <Text style={styles.title}>
@@ -280,50 +352,122 @@ function Agenda() {
                     </View>
                     <View style={styles.infoRow}>
                       <Ionicons name="cash-outline" size={16} color={colors.primary} />
-                      <Text style={styles.infoText}>${booking.price}</Text>
+                      <Text style={styles.infoText}>${booking.price?.toFixed(2) || booking.price}</Text>
                     </View>
                   </View>
 
                   {role === 'walker' && booking.status === 'pending' && (
-                    <View style={styles.actionsRow}>
+                    <View>
                       <Pressable
-                        onPress={() => openCancelModal(booking)}
-                        style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
+                        onPress={() => openLocationMap(booking)}
+                        style={({ pressed }) => [styles.viewMapButton, pressed && styles.cardPressed]}
                       >
-                        <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
-                        <Text style={styles.denyButtonText}>Rechazar</Text>
+                        <Ionicons name="map-outline" size={18} color={colors.primary} />
+                        <Text style={styles.viewMapButtonText}>Ver ubicacion</Text>
+                        <Ionicons name="open-outline" size={14} color={colors.primary} />
                       </Pressable>
-                      <Pressable
-                        onPress={() => handleStatusChange(booking._id, 'accepted')}
-                        style={({ pressed }) => [styles.acceptButton, pressed && styles.cardPressed]}
-                      >
-                        <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                        <Text style={styles.acceptButtonText}>Aceptar</Text>
-                      </Pressable>
+                      <View style={styles.actionsRow}>
+                        <Pressable
+                          onPress={() => openCancelModal(booking)}
+                          style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                          <Text style={styles.denyButtonText}>Rechazar</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleStatusChange(booking._id, 'accepted')}
+                          style={({ pressed }) => [styles.acceptButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                          <Text style={styles.acceptButtonText}>Aceptar</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   )}
 
                   {role === 'walker' && booking.status === 'accepted' && (
-                    <View style={styles.actionsRow}>
-                      <Pressable
-                        onPress={() => openVerifyModal(booking)}
-                        style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
-                      >
-                        <Ionicons name="play-outline" size={18} color="#fff" />
-                        <Text style={styles.startButtonText}>Iniciar paseo</Text>
-                      </Pressable>
+                    <View>
+                      <View style={styles.actionsRow}>
+                        {booking.location?.latitude && booking.location?.longitude && (
+                          <Pressable
+                            onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${booking.location.latitude},${booking.location.longitude}`)}
+                            style={({ pressed }) => [styles.trackingButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="navigate-outline" size={18} color="#fff" />
+                            <Text style={styles.trackingButtonText}>Navegar</Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          onPress={() => openLocationMap(booking)}
+                          style={({ pressed }) => [styles.viewMapButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="map-outline" size={18} color={colors.primary} />
+                          <Text style={styles.viewMapButtonText}>Ver ubicacion</Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.actionsRow}>
+                        {booking.client?.phone && (
+                          <Pressable
+                            onPress={() => openPhone(`tel:${booking.client.phone}`)}
+                            style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="call-outline" size={18} color="#fff" />
+                            <Text style={styles.startButtonText}>Llamar</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                      <View style={styles.actionsRow}>
+                        <Pressable
+                          onPress={() => openVerifyModal(booking)}
+                          style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="play-outline" size={18} color="#fff" />
+                          <Text style={styles.startButtonText}>Iniciar paseo</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   )}
 
                   {role === 'walker' && booking.status === 'in_progress' && (
-                    <View style={styles.actionsRow}>
-                      <Pressable
-                        onPress={() => openVerifyModal(booking)}
-                        style={({ pressed }) => [styles.completeButton, pressed && styles.cardPressed]}
-                      >
-                        <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
-                        <Text style={styles.completeButtonText}>Entregar mascota</Text>
-                      </Pressable>
+                    <View>
+                      <View style={styles.actionsRow}>
+                        {booking.location?.latitude && booking.location?.longitude && (
+                          <Pressable
+                            onPress={() => Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${booking.location.latitude},${booking.location.longitude}`)}
+                            style={({ pressed }) => [styles.trackingButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="navigate-outline" size={18} color="#fff" />
+                            <Text style={styles.trackingButtonText}>Navegar</Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          onPress={() => openLocationMap(booking)}
+                          style={({ pressed }) => [styles.viewMapButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="map-outline" size={18} color={colors.primary} />
+                          <Text style={styles.viewMapButtonText}>Ver ubicacion</Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.actionsRow}>
+                        {booking.client?.phone && (
+                          <Pressable
+                            onPress={() => openPhone(`tel:${booking.client.phone}`)}
+                            style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="call-outline" size={18} color="#fff" />
+                            <Text style={styles.startButtonText}>Llamar</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                      <View style={styles.actionsRow}>
+                        <Pressable
+                          onPress={() => openVerifyModal(booking)}
+                          style={({ pressed }) => [styles.completeButton, pressed && styles.cardPressed]}
+                        >
+                          <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+                          <Text style={styles.completeButtonText}>Entregar mascota</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   )}
 
@@ -343,6 +487,15 @@ function Agenda() {
                         </View>
                       </View>
                       <View style={styles.actionsRow}>
+                        {booking.walker?.phone && (
+                          <Pressable
+                            onPress={() => openPhone(`tel:${booking.walker.phone}`)}
+                            style={({ pressed }) => [styles.trackingButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="call-outline" size={18} color="#fff" />
+                            <Text style={styles.trackingButtonText}>Llamar</Text>
+                          </Pressable>
+                        )}
                         <Pressable
                           onPress={() => openCancelModal(booking)}
                           style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
@@ -373,6 +526,17 @@ function Agenda() {
                           <Ionicons name="map-outline" size={18} color="#fff" />
                           <Text style={styles.trackingButtonText}>Ver paseo en vivo</Text>
                         </Pressable>
+                        {booking.walker?.phone && (
+                          <Pressable
+                            onPress={() => openPhone(`tel:${booking.walker.phone}`)}
+                            style={({ pressed }) => [styles.startButton, pressed && styles.cardPressed]}
+                          >
+                            <Ionicons name="call-outline" size={18} color="#fff" />
+                            <Text style={styles.startButtonText}>Llamar</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                      <View style={styles.actionsRow}>
                         <Pressable
                           onPress={() => openCancelModal(booking)}
                           style={({ pressed }) => [styles.denyButton, pressed && styles.cardPressed]}
@@ -396,8 +560,15 @@ function Agenda() {
                     </View>
                   )}
 
-                  {booking.status === 'completed' && (
+                  {role === 'user' && booking.status === 'completed' && (
                     <View style={styles.actionsRow}>
+                      <Pressable
+                        onPress={() => { setReviewBooking(booking); setReviewRating(0); setReviewComment(''); setReviewSuccess(false); setReviewModalVisible(true); }}
+                        style={({ pressed }) => [styles.trackingButton, pressed && styles.cardPressed]}
+                      >
+                        <Ionicons name="star-outline" size={18} color="#fff" />
+                        <Text style={styles.trackingButtonText}>Calificar</Text>
+                      </Pressable>
                       <Pressable
                         onPress={() => { setReportBooking(booking); setReportReason(''); setReportDescription(''); setReportSuccess(false); setReportModalVisible(true); }}
                         style={({ pressed }) => [styles.reportButton, pressed && styles.cardPressed]}
@@ -415,13 +586,26 @@ function Agenda() {
       </ScrollView>
 
       <Modal visible={cancelModalVisible} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setCancelModalVisible(false)}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay} contentContainerStyle={styles.modalOverlay}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Cancelar reserva</Text>
             <Text style={styles.modalSubtitle}>
-              Indica el motivo de la cancelación
+              Indica el motivo de la cancelacion
             </Text>
+            {selectedBooking && selectedBooking.paymentAmount > 0 && (
+              <View style={styles.penaltyBlock}>
+                <Ionicons name="warning-outline" size={18} color="#f59e0b" />
+                <Text style={styles.penaltyText}>
+                  {role === 'walker'
+                    ? 'El cliente recibira reembolso completo.'
+                    : selectedBooking.status === 'in_progress'
+                      ? `Se cobrara el 100% ($${selectedBooking.price?.toFixed(2) || selectedBooking.price}) por cancelacion durante el servicio.`
+                      : `Se te cobrara 50% ($${((selectedBooking.price || 0) * 0.5).toFixed(2)}) de penalizacion.`
+                  }
+                </Text>
+              </View>
+            )}
             <TextInput
               multiline
               onChangeText={setCancelReason}
@@ -455,11 +639,11 @@ function Agenda() {
               </Pressable>
             </View>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={verifyModalVisible} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setVerifyModalVisible(false)}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay} contentContainerStyle={styles.modalOverlay}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>
@@ -505,7 +689,7 @@ function Agenda() {
               </Pressable>
             </View>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <TrackingMap
@@ -516,8 +700,19 @@ function Agenda() {
         onCancel={() => { setTrackingVisible(false); setTrackingBooking(null); }}
       />
 
+      <TrackingMap
+        visible={locationMapVisible}
+        role={role}
+        booking={locationMapBooking}
+        mode="static"
+        bookingLocation={locationMapBooking?.client?.latitude != null && locationMapBooking?.client?.longitude != null
+          ? { latitude: locationMapBooking.client.latitude, longitude: locationMapBooking.client.longitude }
+          : null}
+        onCancel={() => { setLocationMapVisible(false); setLocationMapBooking(null); }}
+      />
+
       <Modal visible={reportModalVisible} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => { if (!reportLoading) setReportModalVisible(false); }}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay} contentContainerStyle={styles.modalOverlay}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHandle} />
             {reportSuccess ? (
@@ -606,7 +801,7 @@ function Agenda() {
                         });
                         setReportSuccess(true);
                       } catch (err) {
-                        alert(err.message || 'Error al enviar el reporte.');
+                        Alert.alert('Error', err.message || 'Error al enviar el reporte.');
                       } finally {
                         setReportLoading(false);
                       }
@@ -624,7 +819,101 @@ function Agenda() {
               </>
             )}
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={reviewModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay} contentContainerStyle={styles.modalOverlay}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            {reviewSuccess ? (
+              <>
+                <View style={styles.reportSuccessBlock}>
+                  <Ionicons name="checkmark-circle" size={48} color={colors.primary} />
+                  <Text style={styles.modalTitle}>Calificacion enviada</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Gracias por tu calificacion. Ayuda a otros clientes.
+                  </Text>
+                </View>
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => { setReviewModalVisible(false); setReviewBooking(null); }}
+                    style={styles.modalConfirmButtonGreen}
+                  >
+                    <Text style={styles.modalConfirmText}>Cerrar</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Calificar paseo</Text>
+                <Text style={styles.modalSubtitle}>
+                  Califica tu experiencia con {reviewBooking?.walker?.name || 'el paseador'}
+                </Text>
+
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 16, justifyContent: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Pressable key={star} onPress={() => setReviewRating(star)}>
+                      <Ionicons
+                        name={star <= reviewRating ? 'star' : 'star-outline'}
+                        size={36}
+                        color={star <= reviewRating ? '#f59e0b' : colors.line}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+
+                <TextInput
+                  multiline
+                  onChangeText={setReviewComment}
+                  placeholder="Cuentanos tu experiencia (opcional)"
+                  placeholderTextColor="#8fa899"
+                  style={styles.modalInput}
+                  textAlignVertical="top"
+                  value={reviewComment}
+                />
+
+                <View style={styles.modalActions}>
+                  <Pressable
+                    onPress={() => setReviewModalVisible(false)}
+                    style={styles.modalCancelButton}
+                  >
+                    <Text style={styles.modalCancelText}>Volver</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={reviewRating === 0 || reviewLoading}
+                    onPress={async () => {
+                      try {
+                        setReviewLoading(true);
+                        await apiRequest('/api/reviews', {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            bookingId: reviewBooking._id,
+                            rating: reviewRating,
+                            comment: reviewComment.trim(),
+                          }),
+                        });
+                        setReviewSuccess(true);
+                      } catch (err) {
+                        Alert.alert('Error', err.message || 'Error al enviar calificacion.');
+                      } finally {
+                        setReviewLoading(false);
+                      }
+                    }}
+                    style={[
+                      styles.modalConfirmButtonGreen,
+                      (reviewRating === 0 || reviewLoading) && styles.modalConfirmDisabled,
+                    ]}
+                  >
+                    <Text style={styles.modalConfirmText}>
+                      {reviewLoading ? 'Enviando...' : 'Enviar'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -839,6 +1128,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  viewMapButton: {
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderColor: '#10b981',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  viewMapButtonText: {
+    color: '#10b981',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   startButton: {
     alignItems: 'center',
     backgroundColor: '#10b981',
@@ -1051,6 +1357,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 20,
+  },
+  penaltyBlock: {
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
+    borderColor: '#f59e0b',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  penaltyText: {
+    color: '#92400e',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
   },
 });
 

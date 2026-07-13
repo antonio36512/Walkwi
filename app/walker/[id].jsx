@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, shadows } from '../../src/styles/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { apiRequest } from '../../src/services/api';
@@ -36,7 +39,7 @@ const DURATION_OPTIONS = [
   { label: '120 min', value: 120 },
 ];
 
-const STEP_TITLES = ['Mascota', 'Fecha, hora y duración', 'Dirección', 'Resumen'];
+const STEP_TITLES = ['Mascota', 'Fecha, hora y duración', 'Dirección', 'Resumen', 'Pago'];
 
 function generateTimeSlots(start, end, interval = 60) {
   if (!start || !end) return [];
@@ -212,10 +215,12 @@ export default function WalkerProfile() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [walker, setWalker] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reviews, setReviews] = useState([]);
 
   const [bookingVisible, setBookingVisible] = useState(false);
   const [step, setStep] = useState(1);
@@ -233,6 +238,10 @@ export default function WalkerProfile() {
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
   const [bookingLatitude, setBookingLatitude] = useState(null);
   const [bookingLongitude, setBookingLongitude] = useState(null);
+  const [pendingBookingData, setPendingBookingData] = useState(null);
+  const [paypalPolling, setPaypalPolling] = useState(false);
+  const [paypalPollingBookingId, setPaypalPollingBookingId] = useState(null);
+  const [paypalTimeLeft, setPaypalTimeLeft] = useState(300);
 
   useEffect(() => {
     let mounted = true;
@@ -247,6 +256,14 @@ export default function WalkerProfile() {
       }
     }
     fetchWalker();
+    return () => { mounted = false; };
+  }, [id]);
+
+  useEffect(() => {
+    let mounted = true;
+    apiRequest(`/api/reviews/walker/${id}`)
+      .then((data) => { if (mounted) setReviews(data || []); })
+      .catch(() => {});
     return () => { mounted = false; };
   }, [id]);
 
@@ -272,6 +289,59 @@ export default function WalkerProfile() {
   useEffect(() => {
     setDuration(null);
   }, [time]);
+
+  useEffect(() => {
+    if (!paypalPolling || !paypalPollingBookingId) return;
+
+    let mounted = true;
+    let timedOut = false;
+
+    const timerInterval = setInterval(() => {
+      if (!mounted || timedOut) return;
+      setPaypalTimeLeft((prev) => {
+        if (prev <= 1) {
+          timedOut = true;
+          clearInterval(timerInterval);
+          cancelBookingQuiet(paypalPollingBookingId);
+          setPaypalPolling(false);
+          setPaypalPollingBookingId(null);
+          setTimeout(() => Alert.alert('Tiempo agotado', 'El pago no se confirmo. La reserva ha sido cancelada.'), 300);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const pollInterval = setInterval(async () => {
+      if (!mounted || timedOut) return;
+      try {
+        const booking = await apiRequest(`/api/bookings/${paypalPollingBookingId}`);
+        if (!mounted || timedOut) return;
+        if (booking.paymentStatus === 'captured' || booking.paymentStatus === 'refunded') {
+          timedOut = true;
+          clearInterval(timerInterval);
+          clearInterval(pollInterval);
+          setPaypalPolling(false);
+          setPaypalPollingBookingId(null);
+          setSuccess(true);
+          setTimeout(() => {
+            setBookingVisible(false);
+            resetModal();
+            router.push('/(tabs)/agenda');
+          }, 1500);
+        } else if (booking.status === 'cancelled') {
+          timedOut = true;
+          clearInterval(timerInterval);
+          clearInterval(pollInterval);
+          setPaypalPolling(false);
+          setPaypalPollingBookingId(null);
+          setTimeout(() => Alert.alert('Pago cancelado', 'La reserva fue cancelada.'), 300);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => { mounted = false; clearInterval(timerInterval); clearInterval(pollInterval); };
+  }, [paypalPolling, paypalPollingBookingId]);
 
   const bookedSet = useMemo(() => {
     const set = new Set();
@@ -340,10 +410,10 @@ export default function WalkerProfile() {
   }, [time, duration]);
 
   const estimatedPrice = useMemo(() => {
-    const price = walker?.pricePerHour || 0;
     if (!duration) return '0.00';
-    return ((duration / 60) * price).toFixed(2);
-  }, [duration, walker]);
+    const d = Math.max(30, Math.min(120, duration));
+    return ((6 + ((d - 30) / 90) * 9)).toFixed(2);
+  }, [duration]);
 
   const handlePetSelect = (pet) => {
     setPetName(pet.name);
@@ -363,9 +433,22 @@ export default function WalkerProfile() {
     setBookedSlots([]);
     setBookingLatitude(null);
     setBookingLongitude(null);
+    setPendingBookingData(null);
+    setPaypalPolling(false);
+    setPaypalPollingBookingId(null);
+    setPaypalTimeLeft(300);
   };
 
-  const openBooking = () => {
+  const openBooking = async () => {
+    try {
+      const active = await apiRequest('/api/bookings?status=accepted');
+      const inProgress = await apiRequest('/api/bookings?status=in_progress');
+      if ((active.length > 0 || inProgress.length > 0)) {
+        Alert.alert('Paseo activo', 'Ya tienes un paseo en curso o proximo. Debes completar o cancelarlo antes de reservar otro.');
+        return;
+      }
+    } catch {}
+
     resetModal();
     setBookingLatitude(user?.latitude || null);
     setBookingLongitude(user?.longitude || null);
@@ -375,17 +458,54 @@ export default function WalkerProfile() {
 
   const canAdvance = () => {
     if (step === 1) return !!petName;
-    if (step === 2) return !!dateObj && !!time && !!duration;
+    if (step === 2) {
+      if (!dateObj || !time || !duration) return false;
+      const [h, m] = time.split(':').map(Number);
+      const selected = new Date(dateObj);
+      selected.setHours(h, m, 0, 0);
+      return selected > new Date();
+    }
     if (step === 3) return !!address;
+    if (step === 4) return true;
     return true;
   };
 
   const handleNext = () => {
-    if (step < 4 && canAdvance()) setStep(step + 1);
+    if (step === 1 && !petName) {
+      Alert.alert('Selecciona mascota', 'Debes seleccionar una mascota para el paseo.');
+      return;
+    }
+    if (step === 2 && (!dateObj || !time || !duration)) {
+      Alert.alert('Datos incompletos', 'Selecciona fecha, hora y duracion del paseo.');
+      return;
+    }
+    if (step === 2 && dateObj && time) {
+      const [h, m] = time.split(':').map(Number);
+      const selected = new Date(dateObj);
+      selected.setHours(h, m, 0, 0);
+      if (selected <= new Date()) {
+        Alert.alert('Fecha invalida', 'La fecha y hora deben ser en el futuro.');
+        return;
+      }
+    }
+    if (step === 3 && !address) {
+      Alert.alert('Direccion requerida', 'Selecciona la ubicacion del paseo.');
+      return;
+    }
+    if (step < 5 && canAdvance()) setStep(step + 1);
   };
 
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
+  };
+
+  const cancelBookingQuiet = async (bookingId) => {
+    try {
+      await apiRequest(`/api/bookings/${bookingId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'cancelled', cancelReason: 'Error al procesar el pago.' }),
+      });
+    } catch {}
   };
 
   const handleBooking = async () => {
@@ -396,7 +516,7 @@ export default function WalkerProfile() {
       const dateStr = dateObj.toISOString().split('T')[0];
       const startTime = new Date(`${dateStr}T${time}:00`);
 
-      await apiRequest('/api/bookings', {
+      const booking = await apiRequest('/api/bookings', {
         method: 'POST',
         body: JSON.stringify({
           walkerId: id,
@@ -408,20 +528,50 @@ export default function WalkerProfile() {
           latitude: bookingLatitude,
           longitude: bookingLongitude,
           notes,
+          price: parseFloat(estimatedPrice),
         }),
       });
 
-      setSuccess(true);
-      setTimeout(() => {
-        setBookingVisible(false);
-        resetModal();
-        router.push('/(tabs)/agenda');
-      }, 1500);
+      let order;
+      try {
+        order = await apiRequest('/api/payments/create-order', {
+          method: 'POST',
+          body: JSON.stringify({
+            bookingId: booking._id,
+            amount: parseFloat(estimatedPrice),
+          }),
+        });
+      } catch (payErr) {
+        await cancelBookingQuiet(booking._id);
+        Alert.alert('Error de pago', 'No se pudo crear la orden de PayPal. La reserva ha sido cancelada.');
+        return;
+      }
+
+      if (!order.approveUrl) {
+        await cancelBookingQuiet(booking._id);
+        Alert.alert('Error de pago', 'No se obtuvo el enlace de pago. La reserva ha sido cancelada.');
+        return;
+      }
+
+      setPendingBookingData(booking);
+      setPaypalPollingBookingId(booking._id);
+      setPaypalPolling(true);
+      setPaypalTimeLeft(300);
+      Linking.openURL(order.approveUrl);
     } catch (err) {
-      console.error(err);
+      Alert.alert('Error', err.message || 'No se pudo crear la reserva. Intenta de nuevo.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handlePayPalCancel = () => {
+    if (paypalPollingBookingId) {
+      cancelBookingQuiet(paypalPollingBookingId);
+    }
+    setPaypalPolling(false);
+    setPaypalPollingBookingId(null);
+    setPendingBookingData(null);
   };
 
   if (loading) {
@@ -530,13 +680,37 @@ export default function WalkerProfile() {
               <Text style={styles.ratingSubtext}>{walker.reviewCount} reseñas</Text>
             </View>
           </View>
+          {reviews.length > 0 && (
+            <View style={{ marginTop: 14, gap: 10 }}>
+              {reviews.map((r) => (
+                <View key={r._id} style={{ backgroundColor: colors.input, borderRadius: 14, padding: 14 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    {r.client?.profilePhotoUri ? (
+                      <Image source={{ uri: r.client.profilePhotoUri }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                    ) : (
+                      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="person-outline" size={14} color={colors.primary} />
+                      </View>
+                    )}
+                    <Text style={{ fontWeight: '800', color: colors.text, fontSize: 13 }}>{r.client?.name || 'Cliente'}</Text>
+                    <View style={{ flexDirection: 'row', gap: 2, marginLeft: 'auto' }}>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Ionicons key={s} name={s <= r.rating ? 'star' : 'star-outline'} size={12} color="#f59e0b" />
+                      ))}
+                    </View>
+                  </View>
+                  {r.comment ? <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 18 }}>{r.comment}</Text> : null}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
 
-      <View style={styles.stickyFooter}>
+      <View style={[styles.stickyFooter, { paddingBottom: Math.max(insets.bottom, 14) }]}>
         <View style={styles.footerPrice}>
           <Text style={styles.footerPriceLabel}>Desde</Text>
-          <Text style={styles.footerPriceValue}>${walker.pricePerHour}/h</Text>
+          <Text style={styles.footerPriceValue}>$6 - $15</Text>
         </View>
         <Pressable
           onPress={openBooking}
@@ -580,7 +754,7 @@ export default function WalkerProfile() {
                 <Text style={styles.successSub}>Redirigiendo a tu agenda...</Text>
               </View>
             ) : (
-              <>
+              <View style={{ flex: 1 }}>
                 <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
                   {step === 1 && (
                     <View>
@@ -718,7 +892,7 @@ export default function WalkerProfile() {
                         <View style={styles.timeRangeCard}>
                           <View>
                             <Text style={styles.timeRangeLabel}>{time} – {endTimeLabel}</Text>
-                            <Text style={styles.timeRangeDetail}>{duration} min × ${walker.pricePerHour}/h</Text>
+                            <Text style={styles.timeRangeDetail}>{duration} min</Text>
                           </View>
                           <Text style={styles.timeRangePrice}>${estimatedPrice}</Text>
                         </View>
@@ -825,8 +999,42 @@ export default function WalkerProfile() {
                       </View>
                     </View>
                   )}
-                </ScrollView>
 
+                  {step === 5 && (
+                    <View>
+                      <Text style={styles.stepDescription}>
+                        Confirma tu pago para reservar
+                      </Text>
+
+                      <View style={styles.summaryCard}>
+                        <View style={styles.summaryField}>
+                          <Ionicons name="cash-outline" size={16} color={colors.primary} />
+                          <Text style={styles.summaryFieldValue}>Monto a pagar</Text>
+                          <Text style={styles.summaryTotalValue}>${estimatedPrice}</Text>
+                        </View>
+                        <View style={styles.summaryDivider} />
+                        <View style={styles.summaryField}>
+                          <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.summaryFieldValue, { fontSize: 13, color: colors.textMuted }]}>
+                            El pago se retendra hasta completar el servicio
+                          </Text>
+                        </View>
+                        <View style={styles.summaryField}>
+                          <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.summaryFieldValue, { fontSize: 13, color: colors.textMuted }]}>
+                            Cancelacion antes: 50% de penalizacion
+                          </Text>
+                        </View>
+                        <View style={styles.summaryField}>
+                          <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.summaryFieldValue, { fontSize: 13, color: colors.textMuted }]}>
+                            Cancelacion durante: 100% cobro
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
                 <View style={styles.modalFooter}>
                   {step > 1 ? (
                     <Pressable onPress={handleBack} style={styles.backStepBtn}>
@@ -837,7 +1045,7 @@ export default function WalkerProfile() {
                     <View />
                   )}
 
-                  {step < 4 ? (
+                  {step < 5 ? (
                     <Pressable
                       onPress={handleNext}
                       disabled={!canAdvance()}
@@ -847,7 +1055,9 @@ export default function WalkerProfile() {
                         !canAdvance() && styles.nextStepBtnDisabled,
                       ]}
                     >
-                      <Text style={styles.nextStepBtnText}>Siguiente</Text>
+                      <Text style={styles.nextStepBtnText}>
+                        {step === 4 ? 'Siguiente' : 'Siguiente'}
+                      </Text>
                       <Ionicons name="arrow-forward" size={16} color="#fff" />
                     </Pressable>
                   ) : (
@@ -864,14 +1074,14 @@ export default function WalkerProfile() {
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
                         <>
-                          <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                          <Text style={styles.confirmBtnText}>Confirmar</Text>
+                          <Ionicons name="card-outline" size={18} color="#fff" />
+                          <Text style={styles.confirmBtnText}>Pagar con PayPal</Text>
                         </>
                       )}
                     </Pressable>
                   )}
                 </View>
-              </>
+              </View>
             )}
           </Pressable>
         </Pressable>
@@ -890,6 +1100,24 @@ export default function WalkerProfile() {
         }}
         onCancel={() => setMapPickerVisible(false)}
       />
+
+      <Modal visible={paypalPolling} transparent animationType="fade">
+        <Pressable style={styles.paypalModalOverlay} onPress={() => {}}>
+          <View style={styles.paypalPollingCard}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text style={styles.paypalPollingTitle}>Procesando pago...</Text>
+            <Text style={styles.paypalPollingText}>
+              Completa el pago en la ventana de PayPal.{'\n'}Esta pantalla se cerrara automaticamente.
+            </Text>
+            <Text style={styles.paypalTimer}>
+              {Math.floor(paypalTimeLeft / 60)}:{String(paypalTimeLeft % 60).padStart(2, '0')}
+            </Text>
+            <Pressable onPress={handlePayPalCancel} style={styles.paypalCancelBtn}>
+              <Text style={styles.paypalCancelBtnText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1091,6 +1319,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     height: '82%',
     paddingBottom: 0,
+    overflow: 'hidden',
+    flexDirection: 'column',
   },
   modalHandle: {
     alignSelf: 'center',
@@ -1605,6 +1835,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
+    flexShrink: 0,
   },
   backStepBtn: {
     alignItems: 'center',
@@ -1658,6 +1889,49 @@ const styles = StyleSheet.create({
   },
   confirmBtnText: {
     color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  paypalModalOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paypalPollingCard: {
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    gap: 14,
+    paddingHorizontal: 32,
+    paddingVertical: 36,
+    alignItems: 'center',
+    width: '80%',
+  },
+  paypalPollingTitle: {
+    color: colors.primary,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  paypalPollingText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  paypalTimer: {
+    color: colors.primary,
+    fontSize: 32,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  paypalCancelBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  paypalCancelBtnText: {
+    color: colors.danger,
     fontSize: 14,
     fontWeight: '900',
   },

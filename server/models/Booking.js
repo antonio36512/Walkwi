@@ -66,8 +66,20 @@ const bookingSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'refunded'],
+    enum: ['pending', 'captured', 'refunded', 'partially_refunded'],
     default: 'pending',
+  },
+  paypalOrderId: {
+    type: String,
+    default: null,
+  },
+  paypalCaptureId: {
+    type: String,
+    default: null,
+  },
+  paymentAmount: {
+    type: Number,
+    default: 0,
   },
   tracking: {
     current: {

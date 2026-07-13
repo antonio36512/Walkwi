@@ -104,7 +104,7 @@ function RootLayoutNav() {
   }
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+    <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <ExpoStatusBar backgroundColor={colors.background} style="dark" translucent={false} />
       <Slot />
     </View>

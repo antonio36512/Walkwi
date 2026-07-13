@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, shadows } from '../../src/styles/theme';
 import { useAuth } from '../../src/contexts/AuthContext';
@@ -13,11 +14,12 @@ const allItems = [
 
 function CustomTabBar({ state, navigation }) {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const role = user?.role || 'user';
   const items = allItems.filter((item) => !item.roles || item.roles.includes(role));
 
   return (
-    <View style={[styles.wrapper, { paddingBottom: 12 }]}>
+    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {items.map((item) => {
         const routeIndex = state.routes.findIndex((r) => r.name === item.route);
         const active = state.index === routeIndex;

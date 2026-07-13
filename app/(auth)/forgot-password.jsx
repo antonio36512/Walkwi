@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { apiRequest } from '../../src/services/api';
@@ -6,6 +6,9 @@ import { colors, shadows } from '../../src/styles/theme';
 
 function ForgotPassword() {
   const router = useRouter();
+  const emailRef = useRef(null);
+  const tokenRef = useRef(null);
+  const newPasswordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [token, setToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -16,6 +19,12 @@ function ForgotPassword() {
   const handleRequestToken = async () => {
     setError('');
     setMessage('');
+
+    if (!email.trim()) {
+      setError('Ingresa tu correo electronico.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -34,6 +43,24 @@ function ForgotPassword() {
   const handleResetPassword = async () => {
     setError('');
     setMessage('');
+
+    if (!email.trim()) {
+      setError('Ingresa tu correo electronico.');
+      return;
+    }
+    if (!token.trim()) {
+      setError('Ingresa el codigo de verificacion.');
+      return;
+    }
+    if (!newPassword) {
+      setError('Ingresa la nueva contrasena.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('La contrasena debe tener al menos 6 caracteres.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -53,7 +80,8 @@ function ForgotPassword() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       style={styles.screen}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -73,6 +101,9 @@ function ForgotPassword() {
               onChangeText={setEmail}
               placeholder="alex@example.com"
               placeholderTextColor="#8fa899"
+              ref={emailRef}
+              returnKeyType="next"
+              onSubmitEditing={() => tokenRef.current?.focus()}
               style={styles.input}
               value={email}
             />
@@ -91,6 +122,9 @@ function ForgotPassword() {
               onChangeText={setToken}
               placeholder="123456"
               placeholderTextColor="#8fa899"
+              ref={tokenRef}
+              returnKeyType="next"
+              onSubmitEditing={() => newPasswordRef.current?.focus()}
               style={styles.input}
               value={token}
             />
@@ -102,6 +136,8 @@ function ForgotPassword() {
               onChangeText={setNewPassword}
               placeholder="Nueva contraseña"
               placeholderTextColor="#8fa899"
+              ref={newPasswordRef}
+              returnKeyType="done"
               style={styles.input}
               value={newPassword}
             />
@@ -139,6 +175,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingBottom: 80,
   },
   card: {
     ...shadows.card,

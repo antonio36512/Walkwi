@@ -12,9 +12,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, shadows } from '../styles/theme';
 import { apiRequest } from '../services/api';
 
-function buildMapHtml(initialLat, initialLng) {
+function buildMapHtml(initialLat, initialLng, isStatic) {
   const lat = initialLat || 8.9824;
   const lng = initialLng || -79.5199;
+  const staticInit = isStatic ? `
+    updatePosition(${lat}, ${lng}, []);
+  ` : '';
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -64,6 +67,7 @@ function buildMapHtml(initialLat, initialLng) {
   map.on('load', function() {
     mapReady = true;
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapReady' }));
+    ${staticInit}
   });
 
   function updatePosition(lat, lng, history) {
@@ -121,15 +125,18 @@ function buildMapHtml(initialLat, initialLng) {
 </html>`;
 }
 
-function formatElapsed(startTime) {
+function formatRemaining(startTime, duration) {
   if (!startTime) return '0:00';
-  const diff = Date.now() - new Date(startTime).getTime();
-  const mins = Math.floor(diff / 60000);
-  const secs = Math.floor((diff % 60000) / 1000);
+  const dur = (duration || 30) * 60000;
+  const elapsed = Math.max(0, Math.min(Date.now() - new Date(startTime).getTime(), dur));
+  const remaining = dur - elapsed;
+  if (remaining <= 0) return '0:00';
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-export default function TrackingMap({ visible, bookingId, role, booking, onCancel }) {
+export default function TrackingMap({ visible, bookingId, role, booking, onCancel, mode = 'live', bookingLocation }) {
   const webViewRef = useRef(null);
   const [tracking, setTracking] = useState(null);
   const [elapsed, setElapsed] = useState('0:00');
@@ -137,11 +144,19 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
   const [mapReady, setMapReady] = useState(false);
   const pendingUpdateRef = useRef(null);
 
-  const initialLat = booking?.location?.latitude || 8.9824;
-  const initialLng = booking?.location?.longitude || -79.5199;
+  const isStatic = mode === 'static';
+  const initialLat = isStatic && bookingLocation?.latitude != null ? bookingLocation.latitude : (booking?.location?.latitude || 8.9824);
+  const initialLng = isStatic && bookingLocation?.longitude != null ? bookingLocation.longitude : (booking?.location?.longitude || -79.5199);
 
   useEffect(() => {
-    if (!visible || !bookingId) return;
+    if (!visible) return;
+    setLoading(true);
+    setMapReady(false);
+    setTracking(null);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || isStatic || !bookingId) return;
     let cancelled = false;
     let interval;
 
@@ -175,22 +190,23 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
       cancelled = true;
       clearInterval(interval);
     };
-  }, [visible, bookingId, mapReady]);
+  }, [visible, bookingId, mapReady, isStatic]);
 
   useEffect(() => {
-    if (!visible || !booking?.startTime) return;
+    if (!visible || isStatic || !booking?.startTime) return;
     const timer = setInterval(() => {
-      setElapsed(formatElapsed(booking.startTime));
+      setElapsed(formatRemaining(booking.startTime, booking.duration));
     }, 1000);
     return () => clearInterval(timer);
-  }, [visible, booking?.startTime]);
+  }, [visible, booking?.startTime, booking?.duration, isStatic]);
 
   const handleMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'mapReady') {
         setMapReady(true);
-        if (pendingUpdateRef.current && webViewRef.current) {
+        setLoading(false);
+        if (!isStatic && pendingUpdateRef.current && webViewRef.current) {
           webViewRef.current.injectJavaScript(pendingUpdateRef.current);
           pendingUpdateRef.current = null;
         }
@@ -198,14 +214,17 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
     } catch {}
   };
 
+  const title = isStatic ? 'Ubicacion del servicio' : 'Tracking en vivo';
+  const titleColor = isStatic ? '#ef4444' : '#10b981';
+
   return (
     <Modal animationType="slide" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.backdrop}>
         <View style={styles.container}>
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Ionicons name="location" size={18} color="#10b981" />
-              <Text style={styles.title}>Tracking en vivo</Text>
+              <Ionicons name="location" size={18} color={titleColor} />
+              <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
             </View>
             <Pressable onPress={onCancel}>
               <Ionicons name="close" size={24} color={colors.textMuted} />
@@ -215,7 +234,7 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
           <View style={styles.mapWrapper}>
             <WebView
               ref={webViewRef}
-              source={{ html: buildMapHtml(initialLat, initialLng) }}
+              source={{ html: buildMapHtml(initialLat, initialLng, isStatic) }}
               style={styles.webview}
               originWhitelist={['*']}
               onMessage={handleMessage}
@@ -224,7 +243,7 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
             />
             {loading || !mapReady ? (
               <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#10b981" />
+                <ActivityIndicator size="large" color={titleColor} />
                 <Text style={styles.loadingText}>Cargando mapa...</Text>
               </View>
             ) : null}
@@ -232,11 +251,13 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
 
           <View style={styles.bottomSheet}>
             <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Ionicons name="time-outline" size={16} color={colors.primary} />
-                <Text style={styles.infoLabel}>Tiempo</Text>
-                <Text style={styles.infoValue}>{elapsed}</Text>
-              </View>
+              {!isStatic && (
+                <View style={styles.infoItem}>
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                  <Text style={styles.infoLabel}>Restante</Text>
+                  <Text style={styles.infoValue}>{elapsed}</Text>
+                </View>
+              )}
               <View style={styles.infoItem}>
                 <Ionicons name="paw-outline" size={16} color={colors.primary} />
                 <Text style={styles.infoLabel}>Mascota</Text>
@@ -249,9 +270,27 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
                   {role === 'walker' ? booking?.client?.name : booking?.walker?.name || 'N/A'}
                 </Text>
               </View>
+              {!isStatic && (
+                <View style={styles.infoItem}>
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                  <Text style={styles.infoLabel}>Horario</Text>
+                  <Text style={styles.infoValue}>
+                    {booking?.startTime
+                      ? new Date(booking.startTime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+                      : 'N/A'}
+                  </Text>
+                </View>
+              )}
             </View>
 
-            {tracking?.current ? (
+            <View style={[styles.addressRow, isStatic && styles.addressRowStatic]}>
+              <Ionicons name="navigate" size={14} color={isStatic ? '#ef4444' : '#10b981'} />
+              <Text style={styles.addressText} numberOfLines={2}>
+                {booking?.location?.address || 'Sin direccion registrada'}
+              </Text>
+            </View>
+
+            {!isStatic && tracking?.current && (
               <View style={styles.locationRow}>
                 <Ionicons name="navigate" size={14} color="#10b981" />
                 <Text style={styles.locationText}>
@@ -261,8 +300,6 @@ export default function TrackingMap({ visible, bookingId, role, booking, onCance
                   {tracking.current.timestamp ? new Date(tracking.current.timestamp).toLocaleTimeString('es') : ''}
                 </Text>
               </View>
-            ) : (
-              <Text style={styles.waitingText}>Esperando ubicacion del paseador...</Text>
             )}
           </View>
         </View>
@@ -379,5 +416,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  addressRow: {
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderColor: '#10b981',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  addressRowStatic: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#ef4444',
+  },
+  addressText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
