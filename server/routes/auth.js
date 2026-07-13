@@ -403,7 +403,7 @@ router.get('/google/callback', async (req, res) => {
       return res.status(400).send('Código de autorización no proporcionado.');
     }
 
-    let expoRedirect = 'walkwi://auth';
+    let expoRedirect = 'walkwi://';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
       if (stateData.expoRedirect) {
@@ -413,7 +413,7 @@ router.get('/google/callback', async (req, res) => {
 
     const oauth2Client = new google.auth.OAuth2(
       GOOGLE_SIGNIN_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET,
+      GOOGLE_SIGNIN_CLIENT_SECRET,
       GOOGLE_SIGNIN_REDIRECT_URI,
     );
 
@@ -449,7 +449,7 @@ router.get('/google/callback', async (req, res) => {
     );
 
     const userData = encodeURIComponent(JSON.stringify(serializeUser(user)));
-    const deepLink = `${expoRedirect}/--/auth?token=${jwtToken}&user=${userData}`;
+    const deepLink = `${expoRedirect}?token=${jwtToken}&user=${userData}`;
 
     return res.send(`<!DOCTYPE html>
 <html>
@@ -469,7 +469,7 @@ router.get('/google/callback', async (req, res) => {
 <html><head><title>Walkwi</title></head>
 <body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif">
 <h2>Error al iniciar sesion con Google.</h2>
-<a href="walkwi://auth?error=google_auth_failed">Volver a Walkwi</a>
+<a href="walkwi://?error=google_auth_failed">Volver a Walkwi</a>
 </body></html>`);
   }
 });

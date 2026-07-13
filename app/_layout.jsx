@@ -44,8 +44,7 @@ function RootLayoutNav() {
     const handleDeepLink = async (url) => {
       if (!url) return;
 
-      const authIndex = url.indexOf('/--/auth');
-      if (authIndex === -1) return;
+      if (!url.includes('token=')) return;
 
       try {
         const queryString = url.split('?')[1] || '';
