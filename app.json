@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Walkwi",
+    "slug": "walkwi",
+    "version": "1.0.0",
+    "scheme": "walkwi",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#eff3ee"
+      },
+      "package": "com.emunozdev.walkwi"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0b2a58bd-be9d-44c2-9296-be290b19b2da"
+      }
+    }
+  }
+}
