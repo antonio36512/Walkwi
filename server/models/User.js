@@ -41,8 +41,18 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'walker'],
+    enum: ['user', 'walker', 'admin'],
     default: 'user',
+  },
+  accountStatus: {
+    type: String,
+    enum: ['active', 'warned', 'suspended', 'blocked'],
+    default: 'active',
+  },
+  sanction: {
+    reason: { type: String },
+    until: { type: Date },
+    adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   location: {
     type: String,

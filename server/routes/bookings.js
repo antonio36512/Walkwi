@@ -1,31 +1,14 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import { captureOrder, refundPayment } from '../services/paypal.js';
+import { authenticate } from '../middleware/authenticate.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET;
 
 function calculatePrice(duration) {
   const d = Math.max(30, Math.min(120, Number(duration) || 30));
   return Math.round((6 + ((d - 30) / 90) * 9) * 100) / 100;
-}
-
-function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Sesion no autorizada.' });
-  }
-
-  try {
-    req.auth = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Sesion expirada o invalida.' });
-  }
 }
 
 function generateCode() {

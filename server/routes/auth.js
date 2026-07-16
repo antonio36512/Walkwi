@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
+import { authenticate } from '../middleware/authenticate.js';
 
 dotenv.config();
 
@@ -80,22 +81,6 @@ function validatePets(pets) {
     const requiredPetFields = [pet.name, pet.photoUri, pet.breed, pet.weight, pet.age];
     return requiredPetFields.some((field) => !field);
   });
-}
-
-function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Sesion no autorizada.' });
-  }
-
-  try {
-    req.auth = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Sesion expirada o invalida.' });
-  }
 }
 
 function serializeUser(user) {

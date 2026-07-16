@@ -1,27 +1,10 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import Review from '../models/Review.js';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
+import { authenticate } from '../middleware/authenticate.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET;
-
-function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Sesion no autorizada.' });
-  }
-
-  try {
-    req.auth = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Token invalido o expirado.' });
-  }
-}
 
 router.get('/walker/:walkerId', async (req, res) => {
   try {

@@ -10,7 +10,12 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "start:server": "node server/server.js",
-    "dev:server": "node server/server.js"
+    "dev:server": "node server/server.js",
+    "admin:install": "npm --prefix admin-web run install:all",
+    "admin:dev": "npm --prefix admin-web run dev",
+    "admin:build": "npm --prefix admin-web run build",
+    "admin:start": "npm --prefix admin-web run start",
+    "admin:portal": "npm --prefix admin-web run portal"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

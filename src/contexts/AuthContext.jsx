@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { getStoredUser, saveStoredUser, clearSession } from '../storage/session';
+import { setOnAuthErrorCallback } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -17,6 +18,11 @@ export function AuthProvider({ children }) {
         if (mounted) setCheckingSession(false);
       });
     return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    setOnAuthErrorCallback(() => setUser(null));
+    return () => setOnAuthErrorCallback(null);
   }, []);
 
   const handleAuth = async (nextUser) => {

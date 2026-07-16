@@ -1,5 +1,6 @@
+import { Alert } from 'react-native';
 import Constants from 'expo-constants';
-import { getStoredToken } from '../storage/session';
+import { getStoredToken, clearSession } from '../storage/session';
 
 function getDevelopmentApiUrl() {
   const hostUri = Constants.expoConfig?.hostUri || Constants.manifest2?.extra?.expoClient?.hostUri;
@@ -9,6 +10,14 @@ function getDevelopmentApiUrl() {
 }
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || getDevelopmentApiUrl();
+
+const AUTH_ERROR_CODES = ['ACCOUNT_BLOCKED', 'ACCOUNT_SUSPENDED', 'INVALID_SESSION', 'UNAUTHORIZED', 'USER_NOT_FOUND'];
+
+let onAuthErrorCallback = null;
+
+export function setOnAuthErrorCallback(callback) {
+  onAuthErrorCallback = callback;
+}
 
 export async function apiRequest(path, options = {}) {
   let response;
@@ -43,6 +52,15 @@ export async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
+    if (AUTH_ERROR_CODES.includes(data.code)) {
+      await clearSession();
+      if (onAuthErrorCallback) onAuthErrorCallback();
+      const title = data.code === 'ACCOUNT_BLOCKED' ? 'Cuenta bloqueada'
+        : data.code === 'ACCOUNT_SUSPENDED' ? 'Cuenta suspendida'
+        : 'Sesión expirada';
+      Alert.alert(title, data.error || 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
+      throw new Error(data.code);
+    }
     throw new Error(data.error || 'No se pudo completar la solicitud.');
   }
 
